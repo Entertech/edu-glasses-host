@@ -198,6 +198,23 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / OTA 升级 /
 设备控制 / 协议开发），Claude Code 打开本仓库即自动可用。
 
+### 教学示例（examples/）
+
+- `examples/headset_demo.py` —— 把眼镜当蓝牙音频设备：A2DP 放音 / HFP 录音 /
+  实时回环（`python3 examples/headset_demo.py list|play|record|loopback`）。
+- `examples/notebooks/` —— 四本 Jupyter 教学笔记本（依赖
+  `pip install jupyter matplotlib pillow`，笔记本目录下启动 `jupyter lab`）：
+
+  | 笔记本 | 内容 |
+  |---|---|
+  | `01_photo_analysis` | 拍照 → PIL 显示 / RGB 直方图 / 边缘检测 |
+  | `02_audio_analysis` | 录音 → 波形图 + 声谱图 |
+  | `03_live_sensors` | 光敏 ALS 实时曲线（遮挡传感器看变化） |
+  | `04_knob_events` | 旋钮事件累积成表盘指针 |
+
+  笔记本经 `examples/notebooks/edu_notebook.py` 的 `EduSession` 驱动
+  `demo_cli` 子进程，三平台代码一致，无需直接操作蓝牙 API。
+
 ### 会话示例
 
 ```

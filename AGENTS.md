@@ -115,6 +115,8 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
 | `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
 | `demo_cli.py` | 交互/管道 REPL；平台分发（darwin → mac 会话，其余 → 线程会话） |
+| `examples/headset_demo.py` | A2DP/HFP 演示（sounddevice 按设备名收放音） |
+| `examples/notebooks/` | 教学 Jupyter（`edu_notebook.EduSession` 以子进程驱动 demo_cli） |
 
 ## 修改守则（不变量）
 
