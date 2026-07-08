@@ -15,7 +15,7 @@ class TestFormatAddress(unittest.TestCase):
         self.assertEqual(_format_address("8CAAB5112233"), "8C:AA:B5:11:22:33")
 
     def test_rejects_bad_length_and_nonhex(self):
-        self.assertIsNone(_format_address("849d4baa0d"))
+        self.assertIsNone(_format_address("00112233"))
         self.assertIsNone(_format_address("zz9d4baa0d05"))
         self.assertIsNone(_format_address("LocalServices"))  # 注册表杂项子键
 
