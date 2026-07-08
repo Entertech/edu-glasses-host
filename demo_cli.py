@@ -500,12 +500,12 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
         w.setframerate(16000)
         decoder = None
         try:
-            import opuslib
-            decoder = opuslib.Decoder(16000, 1)
-        except Exception:
-            print("warning: opuslib/libopus unavailable — WAV will be empty. "
-                  "brew install opus && pip install opuslib "
-                  "(and export DYLD_LIBRARY_PATH=/opt/homebrew/lib)")
+            from edu_host.opus_loader import create_decoder
+            decoder = create_decoder(16000, 1)
+        except Exception as exc:
+            print("warning: opuslib/libopus unavailable (%s) — WAV WILL BE "
+                  "EMPTY. Fix: brew install opus && pip install opuslib"
+                  % exc)
         wav_state.update(file=w, decoder=decoder, path=path,
                          packages=0, frames=0)
         return path
@@ -516,6 +516,9 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
         print("stopped. %d packages, %d frames (~%.1f s) -> %s"
               % (wav_state["packages"], wav_state["frames"],
                  wav_state["frames"] * 0.02, wav_state["path"]))
+        if wav_state["decoder"] is None and wav_state["packages"] > 0:
+            print("warning: the WAV file is EMPTY — audio arrived but no "
+                  "opus decoder (install opuslib + libopus and retry)")
         wav_state.update(file=None, decoder=None)
 
     print("edu> ", end="", flush=True)

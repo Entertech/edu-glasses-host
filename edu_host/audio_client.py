@@ -169,10 +169,11 @@ class WavOpusSink:
     """Decode OPUS frames with opuslib and append PCM to a WAV file."""
 
     def __init__(self, path: Path) -> None:
-        import opuslib  # may raise ImportError / OSError (libopus missing)
+        from .opus_loader import create_decoder
 
         self.path = Path(path)
-        self._decoder = opuslib.Decoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS)
+        # raises ImportError/OSError when opuslib/libopus is missing
+        self._decoder = create_decoder(OPUS_SAMPLE_RATE, OPUS_CHANNELS)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._wav = wave.open(str(self.path), "wb")
         self._wav.setnchannels(OPUS_CHANNELS)
