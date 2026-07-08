@@ -79,6 +79,17 @@ Asynchronous device events (buttons, knob, audio/img state) print live.
 """
 
 
+def split_command(line: str):
+    """按 shell 规则分词，但保留 Windows 反斜杠路径。
+
+    ``shlex.split`` 的 POSIX 模式会把 ``C:\\Users\\x.jpg`` 的反斜杠当转义
+    符吃掉；这里用非 POSIX 模式分词后手工剥除成对引号。
+    """
+    tokens = shlex.split(line, posix=False)
+    return [t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'" else t
+            for t in tokens]
+
+
 def print_event(event: EduEvent) -> None:
     print("\r[event] %s" % event)
 
@@ -237,7 +248,7 @@ def run_threaded_session(ctrl_t, audio_t, img_t, ota_t, out_dir: str,
             if not line:
                 continue
             try:
-                args = shlex.split(line)
+                args = split_command(line)
             except ValueError as exc:
                 print("parse error: %s" % exc)
                 continue
@@ -545,7 +556,7 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
             line = line.strip()
             if line:
                 try:
-                    args = shlex.split(line)
+                    args = split_command(line)
                     cmd = args[0].lower()
                     if cmd in ("quit", "exit", "q"):
                         break

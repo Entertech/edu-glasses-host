@@ -120,7 +120,7 @@ class EduSession:
     def photo(self, filename: str | Path, timeout: float = 30.0) -> Path:
         """拍一张照，阻塞到 JPEG 落盘，返回绝对路径。"""
         path = (self.out_dir / filename).resolve()
-        self.send("photo %s" % path)
+        self.send("photo %s" % path.as_posix())
         self.wait_for(lambda l: "[photo] saved" in l, timeout)
         return path
 
@@ -128,7 +128,7 @@ class EduSession:
                timeout: float = 20.0) -> Path:
         """录 *seconds* 秒音频到 WAV，返回绝对路径。"""
         path = (self.out_dir / filename).resolve()
-        self.send("record start %s" % path)
+        self.send("record start %s" % path.as_posix())
         self.wait_for(lambda l: l.startswith("recording ->"), timeout)
         time.sleep(seconds)
         self.send("record stop")
