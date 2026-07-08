@@ -54,6 +54,7 @@ from edu_host import protocol
 from edu_host.audio_client import AudioStreamClient
 from edu_host.client import EduClient, EduClientError, EduTimeoutError
 from edu_host.image_client import ImageClient
+from edu_host.ota_client import OTAClient, OTAError
 from edu_host.protocol import (CommandId, CompletedImage, DeviceInfo, EduEvent,
                                FrameParser, FrameType, HelloAck, SensorData,
                                Status, encode_frame, parse_event)
@@ -66,6 +67,7 @@ Commands:
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
   record start [out.wav]   start mic recording
   record stop              stop mic recording and finalize the WAV file
+  ota <firmware.bin>       upgrade firmware over OTA SPP 0x2026
   wait <seconds>           keep the session alive (for piped/scripted use)
   help                     show this help
   quit / exit              leave the demo
@@ -117,11 +119,36 @@ def show_photo_rsp(status: int, data: bytes) -> None:
               % (protocol.enum_name(Status, status), data.hex()))
 
 
+def print_ota_progress(stage: str, done: int, total: int) -> None:
+    if stage == "data" and total:
+        print("\r[ota] data %d/%d bytes (%.1f%%)"
+              % (done, total, done * 100.0 / total))
+    else:
+        print("\r[ota] %s" % stage)
+
+
+def run_ota_upgrade(ota_t, firmware_path: str, pump=None,
+                    ota_chunk_size: int = 512,
+                    ota_packet_interval_ms: float = 10.0) -> None:
+    client = OTAClient(ota_t, pump=pump,
+                       max_send_data_payload=ota_chunk_size,
+                       packet_interval_s=ota_packet_interval_ms / 1000.0)
+    try:
+        client.open()
+        result = client.upgrade(Path(firmware_path),
+                                progress=print_ota_progress)
+        print("[ota] complete, reboot=%d" % result.reboot)
+    finally:
+        client.close()
+
+
 # ---------------------------------------------------------------------------
 # Threaded session: serial ports or Bluetooth sockets (Windows / Linux)
 # ---------------------------------------------------------------------------
 
-def run_threaded_session(ctrl_t, audio_t, img_t, out_dir: str) -> int:
+def run_threaded_session(ctrl_t, audio_t, img_t, ota_t, out_dir: str,
+                         ota_chunk_size: int = 512,
+                         ota_packet_interval_ms: float = 10.0) -> int:
     client = EduClient(ctrl_t)
     client.add_event_listener(print_event)
 
@@ -216,6 +243,16 @@ def run_threaded_session(ctrl_t, audio_t, img_t, out_dir: str) -> int:
                           % (stats.packages, stats.frames, stats.seconds,
                              stats.lost_packages, stats.decode_errors,
                              stats.output_path))
+                elif cmd == "ota":
+                    if len(args) < 2:
+                        print("usage: ota <firmware.bin>")
+                        continue
+                    if ota_t is None:
+                        print("no OTA channel: reconnect with --bt or --ota-port.")
+                        continue
+                    run_ota_upgrade(ota_t, args[1],
+                                    ota_chunk_size=ota_chunk_size,
+                                    ota_packet_interval_ms=ota_packet_interval_ms)
                 elif cmd in ("wait", "sleep"):
                     try:
                         secs = float(args[1]) if len(args) > 1 else 1.0
@@ -227,7 +264,9 @@ def run_threaded_session(ctrl_t, audio_t, img_t, out_dir: str) -> int:
                     print("unknown command: %r (try 'help')" % line)
             except EduTimeoutError as exc:
                 print("timeout: %s" % exc)
-            except EduClientError as exc:
+            except OTAError as exc:
+                print("ota error: %s" % exc)
+            except (EduClientError, ValueError) as exc:
                 print("error: %s" % exc)
     finally:
         if audio is not None and audio.is_running:
@@ -248,7 +287,8 @@ def run_threaded_session(ctrl_t, audio_t, img_t, out_dir: str) -> int:
 # pumps instead of blocking in input().
 # ---------------------------------------------------------------------------
 
-def run_mac_session(bt_addr: str, out_dir: str) -> int:
+def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
+                    ota_packet_interval_ms: float = 10.0) -> int:
     try:
         from edu_host import mac_bt
     except ImportError:
@@ -273,14 +313,15 @@ def run_mac_session(bt_addr: str, out_dir: str) -> int:
 
     print("querying SDP for service channels ...")
     chmap = mac_bt.sdp_channels(
-        dev, [mac_bt.UUID_CTRL, mac_bt.UUID_AUDIO, mac_bt.UUID_IMG])
+        dev, [mac_bt.UUID_CTRL, mac_bt.UUID_AUDIO, mac_bt.UUID_IMG,
+              mac_bt.UUID_OTA])
     if mac_bt.UUID_CTRL not in chmap:
         print("EDU-CTRL service (0x2028) not found — is this the education "
               "firmware?")
         return 1
-    print("channels: ctrl=%s audio=%s img=%s"
+    print("channels: ctrl=%s audio=%s img=%s ota=%s"
           % (chmap.get(mac_bt.UUID_CTRL), chmap.get(mac_bt.UUID_AUDIO),
-             chmap.get(mac_bt.UUID_IMG)))
+             chmap.get(mac_bt.UUID_IMG), chmap.get(mac_bt.UUID_OTA)))
 
     ctrl = mac_bt.MacRFCOMMChannel(dev, chmap[mac_bt.UUID_CTRL], "ctrl")
     ctrl.open()
@@ -450,6 +491,18 @@ def run_mac_session(bt_addr: str, out_dir: str) -> int:
                         else:
                             request(CommandId.AUDIO_STOP)
                             stop_wav()
+                    elif cmd == "ota":
+                        if len(args) < 2:
+                            print("usage: ota <firmware.bin>")
+                        elif mac_bt.UUID_OTA not in chmap:
+                            print("OTA service (0x2026) unavailable.")
+                        else:
+                            ota = mac_bt.MacRFCOMMChannel(
+                                dev, chmap[mac_bt.UUID_OTA], "ota")
+                            run_ota_upgrade(
+                                ota, args[1], pump=mac_bt.pump,
+                                ota_chunk_size=ota_chunk_size,
+                                ota_packet_interval_ms=ota_packet_interval_ms)
                     elif cmd in ("wait", "sleep"):
                         try:
                             secs = float(args[1]) if len(args) > 1 else 1.0
@@ -463,6 +516,8 @@ def run_mac_session(bt_addr: str, out_dir: str) -> int:
                         print("unknown command: %r (try 'help')" % line)
                 except EduTimeoutError as exc:
                     print("timeout: %s" % exc)
+                except OTAError as exc:
+                    print("ota error: %s" % exc)
                 except (EduClientError, ValueError) as exc:
                     print("error: %s" % exc)
             print("edu> ", end="", flush=True)
@@ -499,6 +554,12 @@ def main() -> int:
                         help="RFCOMM channel of EDU-AUDIO (Windows/Linux --bt)")
     parser.add_argument("--img-channel", type=int, default=4,
                         help="RFCOMM channel of EDU-IMG (Windows/Linux --bt)")
+    parser.add_argument("--ota-channel", type=int, default=7,
+                        help="RFCOMM channel of OTA 0x2026 (Windows/Linux --bt)")
+    parser.add_argument("--ota-chunk-size", type=int, default=512,
+                        help="max firmware payload bytes per OTA SEND_DATA packet")
+    parser.add_argument("--ota-packet-interval-ms", type=float, default=10.0,
+                        help="minimum interval between OTA SEND_DATA packets")
     parser.add_argument("--list", action="store_true",
                         help="list candidate serial ports and exit")
     parser.add_argument("--ctrl-port",
@@ -507,6 +568,8 @@ def main() -> int:
                         help="EDU-AUDIO serial port (SPP UUID 0x2024)")
     parser.add_argument("--img-port",
                         help="EDU-IMG serial port (SPP UUID 0x2025)")
+    parser.add_argument("--ota-port",
+                        help="OTA serial port (SPP UUID 0x2026)")
     parser.add_argument("--out-dir", default="captures",
                         help="directory for saved photos/recordings")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -527,7 +590,9 @@ def main() -> int:
 
     if args.bt:
         if sys.platform == "darwin":
-            return run_mac_session(args.bt, args.out_dir)
+            return run_mac_session(args.bt, args.out_dir,
+                                   args.ota_chunk_size,
+                                   args.ota_packet_interval_ms)
         from edu_host.bt_socket import (SocketRFCOMMTransport,
                                         bt_socket_supported)
         if not bt_socket_supported():
@@ -542,7 +607,8 @@ def main() -> int:
             SocketRFCOMMTransport(args.bt, args.ctrl_channel, name="ctrl"),
             SocketRFCOMMTransport(args.bt, args.audio_channel, name="audio"),
             SocketRFCOMMTransport(args.bt, args.img_channel, name="img"),
-            args.out_dir)
+            SocketRFCOMMTransport(args.bt, args.ota_channel, name="ota"),
+            args.out_dir, args.ota_chunk_size, args.ota_packet_interval_ms)
 
     if not args.ctrl_port:
         parser.error("connect with --bt <addr> (recommended) or "
@@ -551,8 +617,11 @@ def main() -> int:
 
     audio_t = SerialTransport(args.audio_port) if args.audio_port else None
     img_t = SerialTransport(args.img_port) if args.img_port else None
+    ota_t = SerialTransport(args.ota_port) if args.ota_port else None
     return run_threaded_session(SerialTransport(args.ctrl_port),
-                                audio_t, img_t, args.out_dir)
+                                audio_t, img_t, ota_t, args.out_dir,
+                                args.ota_chunk_size,
+                                args.ota_packet_interval_ms)
 
 
 if __name__ == "__main__":

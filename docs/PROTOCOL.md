@@ -71,6 +71,8 @@ def crc16(data: bytes) -> int:
 - `als_raw` 为 STK3A8X 光敏原始 16-bit 计数值，**非 lux**；数值越大环境越亮。
 - `battery_temp` 为电池 NTC 温度；`btcore_temp` 为蓝牙 SoC 结温。设备没有独立环境温度计。
 - TAKE_PHOTO 在 ISP 睡眠时会自动唤醒并缓存执行（可能有数秒延迟）；忙碌时返回 BUSY。
+- GET_SENSORS 的 RSP 偶尔可能延迟约 200 ms（光敏传感器重新使能后需等一个积分周期）。
+  host 请求超时建议 ≥2 s。
 
 ## 4. 事件（EVT）
 
@@ -144,5 +146,8 @@ TAIL (7B):  0x03 | data_type(1)=0x01 | group_id(1) | seq(4 LE)
 ## 8. Host 参考实现
 
 本仓库即参考实现：`edu_host/` Python 包（蓝牙 socket / IOBluetooth / 串口三种
-transport、协议编解码、音频解码存 wav、图片重组存 jpg）+ `demo_cli.py` 交互式
-demo + `tests/` 单元测试。环境配置见仓库根 README。
+transport、协议编解码、音频解码存 wav、图片重组存 jpg、OTA SPP 升级）+
+`demo_cli.py` 交互式 demo + `tests/` 单元测试。环境配置见仓库根 README。
+升级命令：`ota <firmware.bin>`（升级包由固件维护方提供）；macOS `--bt auto`
+路径通过 SDP 查找 0x2026，Windows/Linux `--bt` 默认 OTA RFCOMM channel 为 7，
+可用 `--ota-channel` 覆盖。

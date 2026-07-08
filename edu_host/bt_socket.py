@@ -18,6 +18,7 @@ UUID    channel  purpose
 0x2025  4        EDU-IMG   (photo JPEG stream)
 0x2024  5        EDU-AUDIO (OPUS mic stream)
 0x2028  6        EDU-CTRL  (commands/events)
+0x2026  7        OTA       (firmware upgrade)
 ======  =======  ==================================
 """
 
@@ -33,6 +34,7 @@ from .transport import Transport
 CHANNEL_IMG = 4
 CHANNEL_AUDIO = 5
 CHANNEL_CTRL = 6
+CHANNEL_OTA = 7
 
 
 def bt_socket_supported() -> bool:

@@ -1,13 +1,14 @@
 # edu-glasses-host — Looktech 教育版眼镜 Python 上位机 Demo
 
 Host-side demo for the Looktech glasses **education firmware**. It talks to
-the glasses over three Classic-Bluetooth SPP services:
+the glasses over four Classic-Bluetooth SPP services:
 
 | Service   | SPP UUID | RFCOMM ch | Purpose                                        |
 |-----------|----------|-----------|------------------------------------------------|
 | EDU-CTRL  | `0x2028` | 6         | commands / responses / events                  |
 | EDU-AUDIO | `0x2024` | 5         | continuous OPUS mic-audio stream               |
 | EDU-IMG   | `0x2025` | 4         | photo (JPEG) frames, native air-img sub-frames |
+| OTA       | `0x2026` | 7         | firmware upgrade                               |
 
 **推荐连接方式：`--bt` 蓝牙直连**，Windows / Linux / macOS 全平台一条命令，
 无需配置任何串口（macOS 会自动走 IOBluetooth 专用路径）：
@@ -162,8 +163,15 @@ version and capability flags, then drops into a small REPL:
 | `photo [out.jpg]`        | trigger a photo; the JPEG arrives on `--img-port` and is auto-saved  |
 | `record start [out.wav]` | start mic recording (requires `--audio-port`)                        |
 | `record stop`            | stop recording, print stats (packages/frames/loss)                   |
+| `ota <firmware.bin>`     | upgrade firmware over OTA SPP `0x2026` (package from maintainers)    |
 | `wait <seconds>`         | keep the session alive (mainly for piped/scripted use)               |
 | `help` / `quit`          | help / exit                                                          |
+
+OTA sends device-requested blocks as smaller `SEND_DATA` packets. The default
+host pacing is `--ota-chunk-size 512 --ota-packet-interval-ms 10.0`, verified
+end-to-end on a real device over macOS RFCOMM (~1.8 MB in about a minute;
+the device reboots itself after a successful upgrade). Larger or faster
+values can overrun the host Bluetooth path.
 
 Asynchronous events print live at any time, e.g.:
 
@@ -192,7 +200,8 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 
 用 Claude Code / Codex 等 coding agent 操作本仓库时：agent 说明见
 [AGENTS.md](AGENTS.md)（含每个任务的成功判定标志），`.claude/skills/` 下有
-按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / 协议开发），
+按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / OTA 升级 /
+协议开发），
 Claude Code 打开本仓库即自动可用。
 
 ### Example session

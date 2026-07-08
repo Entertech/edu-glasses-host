@@ -11,7 +11,7 @@ Looktech **教育版眼镜**的 Python 上位机：通过经典蓝牙 SPP 与眼
 `edu_host/` 包和 `tests/` 是它的参考实现与可执行规格。
 
 `.claude/skills/` 下有按任务拆好的 skill（连接排障、拍照、录音、传感器、
-事件监听、协议二次开发），Claude Code 打开本仓库即自动可用。
+事件监听、OTA 升级、协议二次开发），Claude Code 打开本仓库即自动可用。
 
 ## 环境与安装
 
@@ -69,6 +69,7 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 | 拍照 | `[photo] saved <path> (<N> bytes, group <G>)` |
 | 录音 | `stopped. <N> packages, <M> frames (~<S> s) ...` |
 | 事件 | `[event] BUTTON ...` / `[event] KNOB ...` |
+| OTA 升级 | `[ota] data ... (100.0%)` → `[ota] complete, reboot=1` |
 
 握手失败：Windows/Linux 输出 `handshake failed`；macOS 输出 `device not found`
 （未配对）、`EDU-CTRL service (0x2028) not found`（非教育固件）或直接异常退出。
@@ -79,13 +80,16 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 - 拍照：`wait 25`（ISP 冷启动最多 ~10 s + 传输数秒；`[photo] saved` 行出现即可）。
 - 录音：录 N 秒就 `wait N`，`record stop` 会自动结算。
 - 事件监听：`wait 30` 左右，期间提示用户按键/转旋钮。
+- OTA：`printf 'ota fw.bin\nquit\n' | ...`，`ota` 命令同步阻塞到完成（~1.8 MB
+  约一分钟）；`reboot=1` 后设备约 2 秒自动重启，重连后 `info` 核对新版本。
+  升级包由固件维护方提供，电量须 ≥20%。
 
 ## 无硬件时的验证
 
 单元测试不需要眼镜、不需要蓝牙、不需要任何第三方依赖：
 
 ```bash
-python3 -m unittest discover -s tests -v    # 35 tests，应全绿
+python3 -m unittest discover -s tests -v    # 41 tests，应全绿
 python3 -m py_compile demo_cli.py edu_host/*.py
 ```
 
@@ -104,6 +108,7 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/transport.py` | Transport 抽象 + 串口实现（pyserial 懒加载） |
 | `edu_host/bt_socket.py` | Windows/Linux 标准库 RFCOMM socket |
 | `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
+| `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
 | `demo_cli.py` | 交互/管道 REPL；平台分发（darwin → mac 会话，其余 → 线程会话） |
 
 ## 修改守则（不变量）

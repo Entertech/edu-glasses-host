@@ -33,6 +33,7 @@ import IOBluetooth  # type: ignore
 UUID_CTRL = 0x2028
 UUID_AUDIO = 0x2024
 UUID_IMG = 0x2025
+UUID_OTA = 0x2026
 
 
 def pump(seconds: float) -> None:
