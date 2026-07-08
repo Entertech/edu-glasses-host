@@ -322,8 +322,20 @@ HEAD。TAIL 固定 7 字节，无附加字段。
 ```
 8 字节包头（小端）:
   tag u8 = 0x52 | cmd u8 (2 左/3 右) | len u16 | sn u16 | sections u8 (=8) | reserved u8
-接着 sections 个: [frame_len u8][OPUS 帧]
+接着 sections 个: [frame_len u8][帧 blob]
 ```
+
+
+每个帧 blob 本身带 8 字节封装头（dcore 编码器输出格式）：
+
+```
+| payload_len(4 大端) | encoder_final_range(4 大端) | OPUS 包(payload_len 字节) |
+```
+
+**解码前必须剥掉这 8 字节**，只把 OPUS 包（CELT-WB，20 ms/帧）喂给解码器
+（本库 `extract_opus_packet()` 已处理）。若整帧直接解码，长度头首字节 0x00
+会被误读为 SILK-10ms 的 TOC，"成功"解出**半时长的噪声**——症状是录 N 秒只得
+N/2 秒且内容不可辨。
 
 - `len` = 段区总长 + 4（固件如此填写，段区总长 = `len - 4`）；
 - `sn` 按 **帧** 递增，相邻包相差 `sections`（=8），可用于丢包检测；

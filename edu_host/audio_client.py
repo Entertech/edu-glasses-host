@@ -42,6 +42,22 @@ from .transport import Transport
 
 log = logging.getLogger("edu_host.audio")
 
+# 每个流内"帧"是带 8 字节头的封装（dcore 编码器输出格式）：
+#   [payload_len u32 大端][encoder final_range u32 大端][OPUS 包(payload_len 字节)]
+# 直接把整个 blob 喂给解码器时，长度头首字节 0x00 会被误读成
+# SILK-NB-10ms 的 TOC，"成功"解出半时长的噪声——必须先剥头。
+FRAME_HEADER_LEN = 8
+
+
+def extract_opus_packet(frame: bytes) -> bytes:
+    """从帧 blob 中取出真正的 OPUS 包；格式不符时原样返回（向后兼容）。"""
+    if len(frame) > FRAME_HEADER_LEN:
+        payload_len = int.from_bytes(frame[0:4], "big")
+        if payload_len + FRAME_HEADER_LEN == len(frame):
+            return frame[FRAME_HEADER_LEN:]
+    return frame
+
+
 # -- package format constants (docs/PROTOCOL.md §6) --------------------------
 
 PKG_TAG = 0x52
@@ -186,7 +202,8 @@ class WavOpusSink:
         if not frame:
             return
         try:
-            pcm = self._decoder.decode(bytes(frame), OPUS_FRAME_SAMPLES)
+            pcm = self._decoder.decode(extract_opus_packet(bytes(frame)),
+                                       OPUS_FRAME_SAMPLES)
         except Exception as exc:
             self.decode_errors += 1
             log.warning("opus decode failed (frame %d bytes): %s",

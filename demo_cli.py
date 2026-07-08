@@ -366,7 +366,8 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
         return 1
     import datetime
     import select
-    from edu_host.audio_client import RecordStreamParser
+    from edu_host.audio_client import (RecordStreamParser,
+                                       extract_opus_packet)
     from edu_host.protocol import AirImgStreamParser, ImageReassembler
 
     dev = mac_bt.find_device(None if bt_addr == "auto" else bt_addr)
@@ -420,7 +421,8 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
 
     audio_parser = RecordStreamParser()
     wav_state = {"file": None, "decoder": None, "path": None,
-                 "packages": 0, "frames": 0}
+                 "packages": 0, "frames": 0, "decode_errors": 0,
+                 "first_decode_error": None}
     img_parser = AirImgStreamParser()
     reassembler = ImageReassembler()
     next_photo_path = [None]
@@ -444,10 +446,14 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
                         wav_state["frames"] += 1
                         if wav_state["decoder"] is not None:
                             try:
-                                pcm = wav_state["decoder"].decode(bytes(f), 320)
+                                pcm = wav_state["decoder"].decode(
+                                    extract_opus_packet(bytes(f)), 320)
                                 wav_state["file"].writeframes(pcm)
-                            except Exception:
-                                pass
+                            except Exception as exc:
+                                wav_state["decode_errors"] += 1
+                                if wav_state["first_decode_error"] is None:
+                                    wav_state["first_decode_error"] = (
+                                        "%s (frame len=%d)" % (exc, len(f)))
         if img is not None:
             idata = img.read()
             if idata:
@@ -507,15 +513,20 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
                   "EMPTY. Fix: brew install opus && pip install opuslib"
                   % exc)
         wav_state.update(file=w, decoder=decoder, path=path,
-                         packages=0, frames=0)
+                         packages=0, frames=0, decode_errors=0,
+                         first_decode_error=None)
         return path
 
     def stop_wav():
         if wav_state["file"] is not None:
             wav_state["file"].close()
-        print("stopped. %d packages, %d frames (~%.1f s) -> %s"
+        print("stopped. %d packages, %d frames (~%.1f s), "
+              "%d decode error(s) -> %s"
               % (wav_state["packages"], wav_state["frames"],
-                 wav_state["frames"] * 0.02, wav_state["path"]))
+                 wav_state["frames"] * 0.02, wav_state["decode_errors"],
+                 wav_state["path"]))
+        if wav_state["first_decode_error"]:
+            print("first decode error: %s" % wav_state["first_decode_error"])
         if wav_state["decoder"] is None and wav_state["packages"] > 0:
             print("warning: the WAV file is EMPTY — audio arrived but no "
                   "opus decoder (install opuslib + libopus and retry)")

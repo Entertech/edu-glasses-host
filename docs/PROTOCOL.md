@@ -140,8 +140,20 @@ TAIL (7B):  0x03 | data_type(1)=0x01 | group_id(1) | seq(4 LE)
 
 ```
 | tag(1)=0x52 | cmd(1) | len(2 LE) | sn(2 LE) | sections(1)=8 | sub_id(1) |
-| 8 × [ frame_len(1) | OPUS 帧 ] |
+| 8 × [ frame_len(1) | 帧 blob ] |
 ```
+
+
+每个帧 blob 本身带 8 字节封装头（dcore 编码器输出格式）：
+
+```
+| payload_len(4 大端) | encoder_final_range(4 大端) | OPUS 包(payload_len 字节) |
+```
+
+**解码前必须剥掉这 8 字节**，只把 OPUS 包（CELT-WB，20 ms/帧）喂给解码器
+（本库 `extract_opus_packet()` 已处理）。若整帧直接解码，长度头首字节 0x00
+会被误读为 SILK-10ms 的 TOC，"成功"解出**半时长的噪声**——症状是录 N 秒只得
+N/2 秒且内容不可辨。
 
 - `len` = 全部 sections 字节数 + 4；`sn` 为包序号（丢包检测）；`sub_id` 为业务位图。
 - OPUS：16 kHz、单声道、约 16 kbps、20 ms/帧（一包 8 帧 = 160 ms）。
