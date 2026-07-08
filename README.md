@@ -1,14 +1,13 @@
 # edu-glasses-host — Looktech 教育版眼镜 Python 上位机 Demo
 
-Host-side demo for the Looktech glasses **education firmware**. It talks to
-the glasses over four Classic-Bluetooth SPP services:
+Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典蓝牙 SPP 服务与眼镜通信：
 
-| Service   | SPP UUID | RFCOMM ch | Purpose                                        |
-|-----------|----------|-----------|------------------------------------------------|
-| EDU-CTRL  | `0x2028` | 6         | commands / responses / events                  |
-| EDU-AUDIO | `0x2024` | 5         | continuous OPUS mic-audio stream               |
-| EDU-IMG   | `0x2025` | 4         | photo (JPEG) frames, native air-img sub-frames |
-| OTA       | `0x2026` | 7         | firmware upgrade                               |
+| 服务      | SPP UUID | RFCOMM 通道 | 用途                                   |
+|-----------|----------|-------------|----------------------------------------|
+| EDU-CTRL  | `0x2028` | 6           | 命令 / 响应 / 事件                     |
+| EDU-AUDIO | `0x2024` | 5           | 连续 OPUS 麦克风音频流                 |
+| EDU-IMG   | `0x2025` | 4           | 照片（JPEG）帧，原生 air-img 子帧流    |
+| OTA       | `0x2026` | 7           | 固件升级                               |
 
 **推荐连接方式：`--bt` 蓝牙直连**，Windows / Linux / macOS 全平台一条命令，
 无需配置任何串口（macOS 会自动走 IOBluetooth 专用路径）：
@@ -28,15 +27,14 @@ python3 demo_cli.py --bt auto                  # 仅 macOS：自动找 EDU-* 设
 
 下面的"虚拟串口"方式仅作为后备（主要用于 Windows COM 口习惯用户）。
 
-Features demonstrated: device info, sensor query (ALS / temperatures),
-photo capture, mic recording to WAV, and live button / knob / state events.
+演示的功能：设备信息、传感器查询（光敏 / 温度）、拍照回传、麦克风录音存
+WAV、按键 / 旋钮 / 状态事件实时打印、OTA 固件升级。
 
-> The **headset** function (music playback and phone calls, A2DP/HFP) works
-> through the operating system's normal Bluetooth audio device — it is *not*
-> part of this demo. Just select the glasses as your audio output/input.
+> **耳机功能**（音乐播放和通话，A2DP/HFP）走操作系统的标准蓝牙音频设备，
+> *不在*本 demo 范围内——在系统里把眼镜选为音频输出/输入即可。
 
-Requirements: Python **3.9+**, `pyserial`, and (optionally, for WAV output)
-`opuslib` + the native libopus library.
+环境要求：Python **3.9+**、`pyserial`（仅串口后备路径需要），以及可选的
+`opuslib` + 本机 libopus（录音输出 WAV 用）。
 
 ```bash
 git clone https://github.com/Entertech/edu-glasses-host.git
@@ -46,45 +44,42 @@ python3 -m pip install -r requirements.txt
 
 ---
 
-## 1. Setup — macOS
+## 1. 环境准备 — macOS
 
-### 1.1 Pair the glasses
+### 1.1 配对眼镜
 
-1. Put the glasses in pairing mode.
-2. System Settings → Bluetooth → connect to the glasses.
+1. 让眼镜进入配对模式。
+2. 系统设置 → 蓝牙 → 连接眼镜。
 
-### 1.2 Find the serial ports
+### 1.2 查找串口（仅串口后备方式需要；推荐直接用 `--bt`）
 
-After pairing, macOS automatically creates one `/dev/cu.*` virtual serial
-port **per SPP service** of the device (this may take a few seconds after
-connecting). List candidates:
+配对后 macOS 会为设备的**每个 SPP 服务**各建一个 `/dev/cu.*` 虚拟串口
+（连接后可能要等几秒）。列出候选：
 
 ```bash
 python3 demo_cli.py --list
-# or: ls /dev/cu.*
+# 或: ls /dev/cu.*
 ```
 
-You should see several device-related entries, e.g.:
+会看到若干设备相关条目，例如：
 
 ```
-/dev/cu.LooktechGlasses        <- one SPP channel
-/dev/cu.LooktechGlasses-1      <- another SPP channel
-/dev/cu.LooktechGlasses-2      <- another SPP channel
+/dev/cu.LooktechGlasses        <- 某个 SPP 通道
+/dev/cu.LooktechGlasses-1      <- 另一个 SPP 通道
+/dev/cu.LooktechGlasses-2      <- 另一个 SPP 通道
 ```
 
-### 1.3 Tell the three ports apart
+### 1.3 区分三个串口
 
-The services share the device name, so the port names alone don't say which
-is which. Use behavior:
+几个服务共用设备名，光看端口名分不出谁是谁，要靠行为判断：
 
-- the **CTRL** port answers the HELLO handshake (the other two never do);
-- the **AUDIO** port emits `0x52`-tagged packages while recording;
-- the **IMG** port emits air-img frames right after a `photo` command.
+- **CTRL** 口会应答 HELLO 握手（另外两个永远不会）；
+- **AUDIO** 口在录音时吐 `0x52` 开头的数据包；
+- **IMG** 口在 `photo` 命令后吐 air-img 帧。
 
-Try ports one by one as `--ctrl-port`; whenever the demo prints
-`handshake failed`, move on to the next. Then assign the remaining two to
-`--audio-port` / `--img-port` (if you guess them swapped, `record` produces
-no audio and `photo` never saves — swap and retry):
+逐个把端口当 `--ctrl-port` 试，凡是打印 `handshake failed` 就换下一个；
+剩下两个分给 `--audio-port` / `--img-port`（如果猜反了，`record` 收不到
+音频、`photo` 存不下来——对调重试即可）：
 
 ```bash
 python3 demo_cli.py --ctrl-port /dev/cu.LooktechGlasses-1 \
@@ -92,88 +87,85 @@ python3 demo_cli.py --ctrl-port /dev/cu.LooktechGlasses-1 \
                     --img-port /dev/cu.LooktechGlasses-2
 ```
 
-### 1.4 OPUS decoding (for WAV output)
+### 1.4 OPUS 解码（录音输出 WAV 用）
 
 ```bash
 brew install opus
 python3 -m pip install opuslib
 ```
 
-If `opuslib`/libopus is missing, recording still works but saves a
-`.opusraw` file instead of WAV (see §4 "record").
+缺 `opuslib`/libopus 时录音仍可进行，但保存为 `.opusraw` 而非 WAV
+（见 §4"录音输出说明"）。
 
 ---
 
-## 2. Setup — Windows
+## 2. 环境准备 — Windows
 
-### 2.1 Pair the glasses
+### 2.1 配对眼镜
 
-Settings → Bluetooth & devices → Add device → pair the glasses.
+设置 → 蓝牙和其他设备 → 添加设备 → 配对眼镜。
 
-### 2.2 Create / find the COM ports
+### 2.2 创建 / 查找 COM 口（仅串口后备方式需要；推荐直接用 `--bt`）
 
-1. Settings → Bluetooth & devices → Devices → **More Bluetooth settings**
-   (or Control Panel → Bluetooth Settings).
-2. Open the **COM Ports** tab. Windows lists one **Outgoing** COM port per
-   SPP service of the device. If none exist, click **Add… → Outgoing** and
-   select the glasses; repeat so that all three services get a port.
-3. Note the three `COMx` numbers (e.g. `COM5`, `COM6`, `COM7`).
+1. 设置 → 蓝牙和其他设备 → 设备 → **更多蓝牙设置**（或控制面板 → 蓝牙设置）。
+2. 打开 **COM 端口**标签页。Windows 会为设备的每个 SPP 服务列一个
+   **传出（Outgoing）** COM 口；如果没有，点 **添加… → 传出**选中眼镜，
+   重复几次让每个服务都有端口。
+3. 记下几个 `COMx` 编号（例如 `COM5`、`COM6`、`COM7`）。
 
 ```powershell
 python demo_cli.py --list
 ```
 
-### 2.3 Tell the three ports apart
+### 2.3 区分三个 COM 口
 
-Same trial method as macOS (§1.3): only the CTRL port answers HELLO:
+方法同 macOS（§1.3）：只有 CTRL 口会应答 HELLO：
 
 ```powershell
 python demo_cli.py --ctrl-port COM5 --audio-port COM6 --img-port COM7
 ```
 
-### 2.4 OPUS decoding on Windows
+### 2.4 Windows 上的 OPUS 解码
 
-`opuslib` needs the native `opus.dll` (libopus):
+`opuslib` 需要本机 `opus.dll`（libopus）：
 
-1. Download a prebuilt 64-bit `opus.dll` (e.g. from the official
-   [opus-codec.org](https://opus-codec.org/) builds or a trusted mirror).
-2. Place it next to `python.exe` **or** in a directory on `PATH`
-   (e.g. `C:\Windows\System32` for 64-bit Python).
-3. `pip install opuslib`.
+1. 下载预编译的 64 位 `opus.dll`（官方 [opus-codec.org](https://opus-codec.org/)
+   构建或可信镜像）。
+2. 放到 `python.exe` 旁边，**或**放进 `PATH` 里的目录。
+3. `pip install opuslib`。
 
-Without it, recordings are saved as `.opusraw` (raw frames, convertible to
-WAV later on any machine with libopus — layout documented in §4).
+没有它时录音保存为 `.opusraw`（原始帧，之后在任何装有 libopus 的机器上
+都能转成 WAV——格式见 §4）。
 
 ---
 
-## 3. Usage
+## 3. 使用
 
 ```bash
+python3 demo_cli.py --bt auto                  # 推荐（macOS；其他平台用 --bt <地址>）
 python3 demo_cli.py --ctrl-port <CTRL> [--audio-port <AUDIO>] \
-                    [--img-port <IMG>] [--out-dir captures]
+                    [--img-port <IMG>] [--out-dir captures]   # 串口后备
 ```
 
-On start the demo performs the HELLO handshake and prints the firmware
-version and capability flags, then drops into a small REPL:
+启动后 demo 先做 HELLO 握手并打印固件版本与能力位，然后进入一个小 REPL：
 
-| Command                  | What it does                                                         |
-|--------------------------|----------------------------------------------------------------------|
-| `info`                   | firmware version, battery %, charging state                          |
-| `sensors`                | ALS **raw counts** (not lux), battery temp (°C), BT-core temp (°C)   |
-| `photo [out.jpg]`        | trigger a photo; the JPEG arrives on `--img-port` and is auto-saved  |
-| `record start [out.wav]` | start mic recording (requires `--audio-port`)                        |
-| `record stop`            | stop recording, print stats (packages/frames/loss)                   |
-| `ota <firmware.bin>`     | upgrade firmware over OTA SPP `0x2026` (package from maintainers)    |
-| `wait <seconds>`         | keep the session alive (mainly for piped/scripted use)               |
-| `help` / `quit`          | help / exit                                                          |
+| 命令                     | 作用                                                             |
+|--------------------------|------------------------------------------------------------------|
+| `info`                   | 固件版本、电量 %、充电状态                                       |
+| `sensors`                | 光敏**原始计数**（非 lux）、电池温度（℃）、蓝牙芯片结温（℃）    |
+| `photo [out.jpg]`        | 拍一张照；JPEG 异步到达后自动保存                                |
+| `record start [out.wav]` | 开始麦克风录音                                                   |
+| `record stop`            | 停止录音，打印统计（包数/帧数/丢包）                             |
+| `ota <firmware.bin>`     | 经 OTA SPP `0x2026` 升级固件（升级包由固件维护方提供）           |
+| `wait <seconds>`         | 保活会话（主要用于管道/脚本化调用）                              |
+| `help` / `quit`          | 帮助 / 退出                                                      |
 
-OTA sends device-requested blocks as smaller `SEND_DATA` packets. The default
-host pacing is `--ota-chunk-size 512 --ota-packet-interval-ms 10.0`, verified
-end-to-end on a real device over macOS RFCOMM (~1.8 MB in about a minute;
-the device reboots itself after a successful upgrade). Larger or faster
-values can overrun the host Bluetooth path.
+OTA 按设备请求的块拆成小的 `SEND_DATA` 包发送。默认节奏
+`--ota-chunk-size 512 --ota-packet-interval-ms 10.0` 已在 macOS RFCOMM
+真机端到端验证（约 1.8 MB 一分钟左右传完；升级成功后设备自动重启）。
+调大调快可能压垮主机蓝牙链路。
 
-Asynchronous events print live at any time, e.g.:
+异步事件随时实时打印，例如：
 
 ```
 [event] BUTTON CAPTURE SINGLE
@@ -182,7 +174,7 @@ Asynchronous events print live at any time, e.g.:
 [event] IMG_STATE DONE error=OK
 ```
 
-### Scripted / agent-driven usage（脚本化 / AI agent 调用）
+### 脚本化 / AI agent 调用
 
 REPL 从 stdin 读命令，因此可以直接用管道非交互调用。拍照/录音的结果是异步
 到达的，用 `wait <seconds>` 保活会话等结果落盘后再 `quit`：
@@ -201,10 +193,9 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 用 Claude Code / Codex 等 coding agent 操作本仓库时：agent 说明见
 [AGENTS.md](AGENTS.md)（含每个任务的成功判定标志），`.claude/skills/` 下有
 按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / OTA 升级 /
-协议开发），
-Claude Code 打开本仓库即自动可用。
+协议开发），Claude Code 打开本仓库即自动可用。
 
-### Example session
+### 会话示例
 
 ```
 $ python3 demo_cli.py --ctrl-port /dev/cu.LooktechGlasses --audio-port /dev/cu.LooktechGlasses-1 --img-port /dev/cu.LooktechGlasses-2
@@ -231,16 +222,16 @@ stopped. 250 packages, 2000 frames (~40.0 s), 0 lost package(s), 0 decode error(
 
 ---
 
-## 4. Recording output details
+## 4. 录音输出说明
 
-- WAV output: 16 kHz, mono, 16-bit PCM, written incrementally while
-  recording (standard `wave` module).
-- Fallback `.opusraw` (when opuslib/libopus is unavailable): repeated
-  records of `[u8 frame_len][OPUS frame]`. Each frame is 20 ms of 16 kHz
-  mono audio at ~16 kbps. Decode later on any machine with libopus, e.g.
-  with a small script using `opuslib.Decoder(16000, 1).decode(frame, 320)`.
-- If a phone call is active, the firmware may switch the stream source from
-  MIC to CALL — you'll see an `AUDIO_STATE` event with `source=CALL`.
+- WAV 输出：16 kHz、单声道、16-bit PCM，录音过程中增量写入
+  （标准库 `wave` 模块）。
+- 降级 `.opusraw`（opuslib/libopus 不可用时）：重复的
+  `[u8 帧长][OPUS 帧]` 记录。每帧是 20 ms 的 16 kHz 单声道音频，约
+  16 kbps。之后可在任何装有 libopus 的机器上解码，例如用
+  `opuslib.Decoder(16000, 1).decode(frame, 320)` 写个小脚本。
+- 如果正在通话，固件可能把流源从 MIC 切到 CALL——你会看到
+  `source=CALL` 的 `AUDIO_STATE` 事件。
 
 ---
 
@@ -284,7 +275,7 @@ stopped. 250 packages, 2000 frames (~40.0 s), 0 lost package(s), 0 decode error(
 
 | evt  | 含义        | 数据                                                          |
 |------|-------------|---------------------------------------------------------------|
-| 0x01 | 按键        | btn u8 (0 AI / 1 CAPTURE / 2 MEDIA) + action u8 (key_pressed_type_t) |
+| 0x01 | 按键        | btn u8 (0 AI / 1 CAPTURE / 2 MEDIA) + action u8（完整取值表见 docs/PROTOCOL.md §4） |
 | 0x02 | 旋钮        | dir u8 (1 RIGHT / 2 LEFT，注意数值顺序) + delta_x i16 + delta_y i16 |
 | 0x03 | 录音状态    | state u8 (0 停止/1 运行) + source u8 (0 MIC/1 CALL) + err u8  |
 | 0x04 | 拍照状态    | capture_evt u8 (0 START/1 DONE/2 ERROR/3 REMOTE_ERROR/4 CANCEL) + error u8 |
@@ -321,39 +312,42 @@ HEAD。TAIL 固定 7 字节，无附加字段。
 
 ---
 
-## 6. Library layout
+## 6. 目录结构
 
 ```
 edu-glasses-host/
-├── demo_cli.py            # interactive demo REPL
+├── demo_cli.py            # 交互式 demo REPL（支持管道脚本化）
 ├── requirements.txt
+├── AGENTS.md              # coding agent 操作指南
 ├── docs/
-│   └── PROTOCOL.md        # full wire-protocol specification
-├── edu_host/              # importable package
+│   └── PROTOCOL.md        # 完整线协议规格
+├── edu_host/              # 可 import 的包
 │   ├── crc16.py           # CRC-16/CCITT-FALSE
-│   ├── protocol.py        # frame codec, enums, events, image reassembly
-│   ├── transport.py       # Transport ABC + SerialTransport + --list helper
-│   ├── bt_socket.py       # Windows/Linux stdlib RFCOMM socket transport
-│   ├── mac_bt.py          # macOS IOBluetooth RFCOMM support
-│   ├── client.py          # EduClient: handshake, req/rsp, events
-│   ├── image_client.py    # EDU-IMG channel receiver -> JPEG files
-│   └── audio_client.py    # audio package parser + OPUS→WAV sink
+│   ├── protocol.py        # 帧编解码、枚举、事件、图片重组
+│   ├── transport.py       # Transport 抽象 + 串口实现 + --list 辅助
+│   ├── bt_socket.py       # Windows/Linux 标准库 RFCOMM socket
+│   ├── mac_bt.py          # macOS IOBluetooth RFCOMM 支持
+│   ├── client.py          # EduClient：握手、请求/响应、事件
+│   ├── image_client.py    # EDU-IMG 接收 → JPEG 落盘
+│   ├── audio_client.py    # 音频包解析 + OPUS→WAV
+│   └── ota_client.py      # OTA 升级客户端（0x2026）
 └── tests/
-    └── test_protocol.py   # pure-python unit tests (no hardware needed)
+    ├── test_protocol.py   # 纯 Python 单测（无需硬件）
+    └── test_ota_client.py # OTA 协议/流程单测（无需硬件）
 ```
 
-Run the tests:
+跑单测：
 
 ```bash
-python3 -m unittest discover -s tests -v     # or: python3 -m pytest tests -v
+python3 -m unittest discover -s tests -v     # 或: python3 -m pytest tests -v
 ```
 
-## 7. Troubleshooting
+## 7. 故障排查
 
-| Symptom                              | Fix                                                                 |
-|--------------------------------------|----------------------------------------------------------------------|
-| `--list` shows no device port        | Re-pair; on macOS wait a few seconds after connecting; on Windows add Outgoing COM ports manually (§2.2). |
-| `handshake failed` on connect        | You probably opened the AUDIO port — swap the two ports.            |
-| `record` saves `.opusraw` not `.wav` | Install libopus + opuslib (§1.4 / §2.4).                            |
-| Port busy / permission denied        | Close other apps using the port; reconnect Bluetooth.               |
-| Photo never arrives                  | Check that `--img-port` is given and is the right port; watch `IMG_STATE` events — `ERROR`/`REMOTE_ERROR` means the camera side failed. |
+| 症状                                  | 处置                                                                 |
+|---------------------------------------|----------------------------------------------------------------------|
+| `--list` 列不出设备端口               | 重新配对；macOS 连接后等几秒；Windows 手动添加传出 COM 口（§2.2）。 |
+| 连接时 `handshake failed`             | 大概率开的是 AUDIO 口——把端口对调。                                 |
+| `record` 存的是 `.opusraw` 不是 `.wav`| 安装 libopus + opuslib（§1.4 / §2.4）。                             |
+| 端口被占 / 权限不足                   | 关掉占用端口的其他程序；重连蓝牙。                                   |
+| 照片一直不到                          | 确认给了 `--img-port` 且端口正确；看 `IMG_STATE` 事件——`ERROR`/`REMOTE_ERROR` 表示相机侧失败。 |
