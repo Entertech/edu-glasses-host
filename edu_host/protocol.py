@@ -61,6 +61,9 @@ class CommandId(IntEnum):
     AUDIO_STOP = 0x03
     GET_SENSORS = 0x04
     GET_DEVICE_INFO = 0x05
+    REBOOT = 0x06
+    SET_LED = 0x07
+    PLAY_TONE = 0x08
 
 
 class Status(IntEnum):
@@ -82,17 +85,81 @@ class EventId(IntEnum):
     IMG_STATE = 0x04
 
 
+class LedId(IntEnum):
+    """SET_LED ``led_id`` byte."""
+
+    INNER = 0   # inner RGB indicator
+    OUTER = 1   # outer (capture) indicator; color is ignored
+
+
+class LedMode(IntEnum):
+    """SET_LED ``mode`` byte. OFF also returns the LED to automatic control."""
+
+    OFF = 0
+    ON = 1
+    BLINK = 2
+    BREATH = 3
+
+
+class LedColor(IntEnum):
+    """SET_LED ``color`` byte (inner RGB only)."""
+
+    RED = 0
+    GREEN = 1
+    BLUE = 2
+    ORANGE = 3
+    PURPLE = 4
+    WHITE = 5
+
+
+class LedSpeed(IntEnum):
+    """SET_LED ``speed`` byte (blink/breath only)."""
+
+    SLOW = 0
+    NORMAL = 1
+    FAST = 2
+
+
+class Tone(IntEnum):
+    """PLAY_TONE ``tone_event`` byte — the device's built-in prompt sounds."""
+
+    POWER_ON = 0
+    POWER_OFF = 1
+    ENTER_CONNECTION_MODE = 2
+    BLUETOOTH_CONNECTED = 3
+    BLUETOOTH_DISCONNECTED = 4
+    CONNECT_TO_APP = 6
+    WEAR_DETECTION = 8
+    BATTERY_LOW_WARNING = 9
+    BATTERY_CRITICALLY_LOW = 10
+    PHOTO_CAPTURING = 11
+    PHOTO_CAPTURED = 12
+    VIDEO_RECORDING_STARTED = 13
+    VIDEO_RECORDING_STOPPED = 14
+    RECORDING_FAILED = 15
+    HANG_UP_CALL = 16
+    UNABLE_TO_OPERATE = 22
+    STORAGE_LOW = 23
+    TEMPERATURE_TOO_HIGH = 24
+    CHARGE = 25
+    AUDIO_RECORDING_STARTED = 27
+    AUDIO_RECORDING_STOPPED = 28
+    CLICK = 29
+
+
 # Capability bits reported in HELLO_ACK (docs/PROTOCOL.md §2)
 CAP_AUDIO_STREAM = 1 << 0
 CAP_PHOTO = 1 << 1
 CAP_SENSORS = 1 << 2
 CAP_INPUT_EVENTS = 1 << 3
+CAP_CONTROL = 1 << 4
 
 CAP_NAMES = {
     CAP_AUDIO_STREAM: "AUDIO_STREAM",
     CAP_PHOTO: "PHOTO",
     CAP_SENSORS: "SENSORS",
     CAP_INPUT_EVENTS: "INPUT_EVENTS",
+    CAP_CONTROL: "CONTROL",
 }
 
 

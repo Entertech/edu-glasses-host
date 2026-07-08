@@ -157,6 +157,9 @@ python3 demo_cli.py --ctrl-port <CTRL> [--audio-port <AUDIO>] \
 | `record start [out.wav]` | 开始麦克风录音                                                   |
 | `record stop`            | 停止录音，打印统计（包数/帧数/丢包）                             |
 | `ota <firmware.bin>`     | 经 OTA SPP `0x2026` 升级固件（升级包由固件维护方提供）           |
+| `reboot`                 | 重启眼镜（回复后约 0.5 秒断开重启）                              |
+| `led <inner\|outer> <off\|on\|blink\|breath> [color] [speed]` | 控制内部 RGB / 外侧指示灯 |
+| `tone <name\|id\|list>`  | 播放内置提示音（`tone list` 列出可用名字）                       |
 | `wait <seconds>`         | 保活会话（主要用于管道/脚本化调用）                              |
 | `help` / `quit`          | 帮助 / 退出                                                      |
 
@@ -193,7 +196,7 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 用 Claude Code / Codex 等 coding agent 操作本仓库时：agent 说明见
 [AGENTS.md](AGENTS.md)（含每个任务的成功判定标志），`.claude/skills/` 下有
 按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / OTA 升级 /
-协议开发），Claude Code 打开本仓库即自动可用。
+设备控制 / 协议开发），Claude Code 打开本仓库即自动可用。
 
 ### 会话示例
 

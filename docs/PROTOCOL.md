@@ -51,7 +51,7 @@ def crc16(data: bytes) -> int:
 | 0x11 | RSP | 设备→host | `cmd_id(1) + status(1) + data`；seq 回显 CMD 的 seq |
 | 0x20 | EVT | 设备→host | `evt_id(1) + data` |
 
-图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件。
+图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件、bit4 控制（重启/LED/提示音）。
 
 ### status 码
 
@@ -66,6 +66,9 @@ def crc16(data: bytes) -> int:
 | 0x03 | AUDIO_STOP | 无 | 无 |
 | 0x04 | GET_SENSORS | 无 | `als_raw(2 LE), battery_temp(1, int8 ℃), btcore_temp(2 LE, int16 ℃)` |
 | 0x05 | GET_DEVICE_INFO | 无 | `fw_version(8 LE), battery_level(1, %), charging(1)` |
+| 0x06 | REBOOT | 无 | 无（status=OK 后约 0.5 s 设备重启，蓝牙断开属预期） |
+| 0x07 | SET_LED | `led_id(1), mode(1), color(1), speed(1)` | 无 |
+| 0x08 | PLAY_TONE | `tone_event(1)` | 无 |
 
 说明：
 - `als_raw` 为 STK3A8X 光敏原始 16-bit 计数值，**非 lux**；数值越大环境越亮。
@@ -73,6 +76,17 @@ def crc16(data: bytes) -> int:
 - TAKE_PHOTO 在 ISP 睡眠时会自动唤醒并缓存执行（可能有数秒延迟）；忙碌时返回 BUSY。
 - GET_SENSORS 的 RSP 偶尔可能延迟约 200 ms（光敏传感器重新使能后需等一个积分周期）。
   host 请求超时建议 ≥2 s。
+
+SET_LED 取值：`led_id` 0=内部 RGB / 1=外侧指示灯（外侧不支持颜色）；`mode`
+0=off / 1=on / 2=blink / 3=breath（off 同时把灯交还固件自动控制）；`color`
+0=红 1=绿 2=蓝 3=橙 4=紫 5=白；`speed` 0=慢 1=中 2=快（仅 blink/breath）。
+注意：固件的业务状态（配对/拍照/录音等指示）随时可能收回 LED——手动设置是
+**尽力而为**，被覆盖后重发命令即可。
+
+PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机、2 进入配对、
+3 蓝牙已连接、11 拍照咔嚓（capturing）、12 拍照完成、27 开始录音、28 停止
+录音、29 短促点击（click）。无效编号返回 INVALID。完整可用值 0–29。
+
 
 ## 4. 事件（EVT）
 

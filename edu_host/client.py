@@ -174,6 +174,27 @@ class EduClient:
 
     # -- internals -----------------------------------------------------------
 
+
+    def reboot(self, timeout: float = 5.0) -> Response:
+        """Ask the device to reboot (~500ms after the RSP arrives)."""
+        return self.request(CommandId.REBOOT, timeout=timeout)
+
+    def set_led(self, led: int, mode: int, color: int = 5, speed: int = 1,
+                timeout: float = 5.0) -> Response:
+        """Drive the inner RGB / outer indicator LED (see protocol enums).
+
+        ``mode=LedMode.OFF`` returns the LED to the firmware's automatic
+        control; business states (pairing, capture, ...) may also reclaim
+        it at any time.
+        """
+        args = bytes([led & 0xFF, mode & 0xFF, color & 0xFF, speed & 0xFF])
+        return self.request(CommandId.SET_LED, args, timeout=timeout)
+
+    def play_tone(self, tone: int, timeout: float = 5.0) -> Response:
+        """Play one of the device's built-in prompt tones (Tone enum)."""
+        return self.request(CommandId.PLAY_TONE, bytes([tone & 0xFF]),
+                            timeout=timeout)
+
     def _next_seq(self) -> int:
         with self._seq_lock:
             seq = self._seq

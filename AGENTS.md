@@ -11,7 +11,8 @@ Looktech **教育版眼镜**的 Python 上位机：通过经典蓝牙 SPP 与眼
 `edu_host/` 包和 `tests/` 是它的参考实现与可执行规格。
 
 `.claude/skills/` 下有按任务拆好的 skill（连接排障、拍照、录音、传感器、
-事件监听、OTA 升级、协议二次开发），Claude Code 打开本仓库即自动可用。
+事件监听、OTA 升级、设备控制（重启/LED/提示音）、协议二次开发），
+Claude Code 打开本仓库即自动可用。
 
 ## 环境与安装
 
@@ -70,6 +71,8 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 | 录音 | `stopped. <N> packages, <M> frames (~<S> s) ...` |
 | 事件 | `[event] BUTTON ...` / `[event] KNOB ...` |
 | OTA 升级 | `[ota] data ... (100.0%)` → `[ota] complete, reboot=1` |
+| 重启 | `reboot: status=OK ...`（随后连接断开属预期） |
+| LED/提示音 | `led: status=OK` / `tone: status=OK` |
 
 握手失败：Windows/Linux 输出 `handshake failed`；macOS 输出 `device not found`
 （未配对）、`EDU-CTRL service (0x2028) not found`（非教育固件）或直接异常退出。
@@ -83,6 +86,8 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 - OTA：`printf 'ota fw.bin\nquit\n' | ...`，`ota` 命令同步阻塞到完成（~1.8 MB
   约一分钟）；`reboot=1` 后设备约 2 秒自动重启，重连后 `info` 核对新版本。
   升级包由固件维护方提供，电量须 ≥20%。
+- 控制类：`printf 'led inner blink green fast\ntone click\nquit\n' | ...`；
+  `reboot` 后需等 ~30 s 重连。LED 手动设置可能被固件业务状态收回（尽力而为）。
 
 ## 无硬件时的验证
 

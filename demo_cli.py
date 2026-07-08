@@ -56,8 +56,9 @@ from edu_host.client import EduClient, EduClientError, EduTimeoutError
 from edu_host.image_client import ImageClient
 from edu_host.ota_client import OTAClient, OTAError
 from edu_host.protocol import (CommandId, CompletedImage, DeviceInfo, EduEvent,
-                               FrameParser, FrameType, HelloAck, SensorData,
-                               Status, encode_frame, parse_event)
+                               FrameParser, FrameType, HelloAck, LedColor,
+                               LedId, LedMode, LedSpeed, SensorData, Status,
+                               Tone, encode_frame, parse_event)
 from edu_host.transport import SerialTransport, list_serial_ports
 
 HELP_TEXT = """\
@@ -68,6 +69,9 @@ Commands:
   record start [out.wav]   start mic recording
   record stop              stop mic recording and finalize the WAV file
   ota <firmware.bin>       upgrade firmware over OTA SPP 0x2026
+  reboot                   reboot the glasses (~0.5s after the reply)
+  led <inner|outer> <off|on|blink|breath> [color] [speed]
+  tone <name|id|list>      play a built-in prompt tone
   wait <seconds>           keep the session alive (for piped/scripted use)
   help                     show this help
   quit / exit              leave the demo
@@ -117,6 +121,50 @@ def show_photo_rsp(status: int, data: bytes) -> None:
     else:
         print("photo request failed: status=%s data=%s"
               % (protocol.enum_name(Status, status), data.hex()))
+
+
+LED_IDS = {"inner": LedId.INNER, "outer": LedId.OUTER}
+LED_MODES = {"off": LedMode.OFF, "on": LedMode.ON,
+             "blink": LedMode.BLINK, "breath": LedMode.BREATH}
+LED_COLORS = {c.name.lower(): c for c in LedColor}
+LED_SPEEDS = {s.name.lower(): s for s in LedSpeed}
+LED_USAGE = "usage: led <inner|outer> <off|on|blink|breath> [color] [speed]"
+
+
+def parse_led_args(args):
+    """Parse the REPL 'led' command; returns ((id,mode,color,speed), error)."""
+    if len(args) < 3:
+        return None, LED_USAGE
+    led = LED_IDS.get(args[1].lower())
+    mode = LED_MODES.get(args[2].lower())
+    if led is None or mode is None:
+        return None, LED_USAGE
+    color, speed = LedColor.WHITE, LedSpeed.NORMAL
+    for extra in args[3:5]:
+        word = extra.lower()
+        if word in LED_COLORS:
+            color = LED_COLORS[word]
+        elif word in LED_SPEEDS:
+            speed = LED_SPEEDS[word]
+        else:
+            return None, "unknown color/speed %r; colors: %s; speeds: %s" % (
+                extra, "/".join(LED_COLORS), "/".join(LED_SPEEDS))
+    return (led, mode, color, speed), None
+
+
+def parse_tone_arg(word: str):
+    """Tone name or numeric id -> int, or None if unknown."""
+    if word.isdigit():
+        value = int(word)
+        return value if value <= 0xFF else None
+    try:
+        return Tone[word.upper()]
+    except KeyError:
+        return None
+
+
+def print_tone_list() -> None:
+    print(", ".join("%s=%d" % (t.name.lower(), t.value) for t in Tone))
 
 
 def print_ota_progress(stage: str, done: int, total: int) -> None:
@@ -253,6 +301,27 @@ def run_threaded_session(ctrl_t, audio_t, img_t, ota_t, out_dir: str,
                     run_ota_upgrade(ota_t, args[1],
                                     ota_chunk_size=ota_chunk_size,
                                     ota_packet_interval_ms=ota_packet_interval_ms)
+                elif cmd == "reboot":
+                    rsp = client.reboot()
+                    print("reboot: status=%s (device restarts in ~0.5s)"
+                          % protocol.enum_name(Status, rsp.status))
+                elif cmd == "led":
+                    parsed, err = parse_led_args(args)
+                    if err:
+                        print(err)
+                        continue
+                    rsp = client.set_led(*parsed)
+                    print("led: status=%s" % protocol.enum_name(Status, rsp.status))
+                elif cmd == "tone":
+                    if len(args) < 2 or args[1].lower() == "list":
+                        print_tone_list()
+                        continue
+                    tone = parse_tone_arg(args[1])
+                    if tone is None:
+                        print("unknown tone %r (try 'tone list')" % args[1])
+                        continue
+                    rsp = client.play_tone(tone)
+                    print("tone: status=%s" % protocol.enum_name(Status, rsp.status))
                 elif cmd in ("wait", "sleep"):
                     try:
                         secs = float(args[1]) if len(args) > 1 else 1.0
@@ -326,12 +395,24 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
     ctrl = mac_bt.MacRFCOMMChannel(dev, chmap[mac_bt.UUID_CTRL], "ctrl")
     ctrl.open()
     audio = img = None
+    # audio/img are optional: a stale bluetoothd channel state sometimes
+    # refuses one of them — degrade gracefully instead of failing the session
+    # (record/photo will report the missing channel; reconnect or toggle
+    # Bluetooth to recover it).
     if mac_bt.UUID_AUDIO in chmap:
         audio = mac_bt.MacRFCOMMChannel(dev, chmap[mac_bt.UUID_AUDIO], "audio")
-        audio.open()
+        try:
+            audio.open()
+        except OSError as exc:
+            print("warning: audio channel unavailable (%s)" % exc)
+            audio = None
     if mac_bt.UUID_IMG in chmap:
         img = mac_bt.MacRFCOMMChannel(dev, chmap[mac_bt.UUID_IMG], "img")
-        img.open()
+        try:
+            img.open()
+        except OSError as exc:
+            print("warning: img channel unavailable (%s)" % exc)
+            img = None
 
     frames = FrameParser()
     pending = {}          # seq -> Frame (RSP/HELLO_ACK)
@@ -397,8 +478,8 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
                 return pending.pop(s)
         raise EduTimeoutError("no answer within %.1fs" % timeout)
 
-    def request(cmd_id, timeout=6.0):
-        fr = transact(FrameType.CMD, bytes([cmd_id]), timeout)
+    def request(cmd_id, args=b"", timeout=6.0):
+        fr = transact(FrameType.CMD, bytes([cmd_id]) + args, timeout)
         return fr.payload[1], bytes(fr.payload[2:])
 
     # HELLO handshake
@@ -503,6 +584,34 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
                                 ota, args[1], pump=mac_bt.pump,
                                 ota_chunk_size=ota_chunk_size,
                                 ota_packet_interval_ms=ota_packet_interval_ms)
+                    elif cmd == "reboot":
+                        status, _ = request(CommandId.REBOOT)
+                        print("reboot: status=%s (device restarts in ~0.5s)"
+                              % protocol.enum_name(Status, status))
+                    elif cmd == "led":
+                        parsed, err = parse_led_args(args)
+                        if err:
+                            print(err)
+                        else:
+                            led, mode, color, speed = parsed
+                            status, _ = request(
+                                CommandId.SET_LED,
+                                bytes([led, mode, color, speed]))
+                            print("led: status=%s"
+                                  % protocol.enum_name(Status, status))
+                    elif cmd == "tone":
+                        if len(args) < 2 or args[1].lower() == "list":
+                            print_tone_list()
+                        else:
+                            tone = parse_tone_arg(args[1])
+                            if tone is None:
+                                print("unknown tone %r (try 'tone list')"
+                                      % args[1])
+                            else:
+                                status, _ = request(CommandId.PLAY_TONE,
+                                                    bytes([tone]))
+                                print("tone: status=%s"
+                                      % protocol.enum_name(Status, status))
                     elif cmd in ("wait", "sleep"):
                         try:
                             secs = float(args[1]) if len(args) > 1 else 1.0
