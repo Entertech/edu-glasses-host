@@ -162,6 +162,7 @@ version and capability flags, then drops into a small REPL:
 | `photo [out.jpg]`        | trigger a photo; the JPEG arrives on `--img-port` and is auto-saved  |
 | `record start [out.wav]` | start mic recording (requires `--audio-port`)                        |
 | `record stop`            | stop recording, print stats (packages/frames/loss)                   |
+| `wait <seconds>`         | keep the session alive (mainly for piped/scripted use)               |
 | `help` / `quit`          | help / exit                                                          |
 
 Asynchronous events print live at any time, e.g.:
@@ -172,6 +173,27 @@ Asynchronous events print live at any time, e.g.:
 [event] AUDIO_STATE running source=MIC err=0
 [event] IMG_STATE DONE error=OK
 ```
+
+### Scripted / agent-driven usage（脚本化 / AI agent 调用）
+
+REPL 从 stdin 读命令，因此可以直接用管道非交互调用。拍照/录音的结果是异步
+到达的，用 `wait <seconds>` 保活会话等结果落盘后再 `quit`：
+
+```bash
+# macOS / Linux
+printf 'photo out.jpg\nwait 25\nquit\n' | python3 demo_cli.py --bt auto
+printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.py --bt auto
+```
+
+```powershell
+# Windows PowerShell（数组逐元素成行送入 stdin）
+"photo out.jpg","wait 25","quit" | python demo_cli.py --bt AA:BB:CC:DD:EE:FF
+```
+
+用 Claude Code / Codex 等 coding agent 操作本仓库时：agent 说明见
+[AGENTS.md](AGENTS.md)（含每个任务的成功判定标志），`.claude/skills/` 下有
+按任务拆好的 skills（连接排障 / 拍照 / 录音 / 传感器 / 事件监听 / 协议开发），
+Claude Code 打开本仓库即自动可用。
 
 ### Example session
 

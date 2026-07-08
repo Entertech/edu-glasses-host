@@ -27,6 +27,15 @@ COM ports (mainly Windows)::
 
     python demo_cli.py --ctrl-port COM5 [--audio-port COM6] [--img-port COM7]
 
+**Scripted / agent-driven usage** — the REPL reads stdin, so commands can be
+piped in. Use ``wait <seconds>`` to keep the session alive while
+asynchronous results (photo JPEG, audio stream) arrive::
+
+    printf 'sensors\\nphoto out.jpg\\nwait 25\\nquit\\n' | \\
+        python demo_cli.py --bt auto
+
+See AGENTS.md for per-task recipes and the exact success markers to check.
+
 The headset function (music/calls, A2DP/HFP) is used through the OS
 Bluetooth audio device directly and is NOT part of this demo.
 """
@@ -57,6 +66,7 @@ Commands:
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
   record start [out.wav]   start mic recording
   record stop              stop mic recording and finalize the WAV file
+  wait <seconds>           keep the session alive (for piped/scripted use)
   help                     show this help
   quit / exit              leave the demo
 Asynchronous device events (buttons, knob, audio/img state) print live.
@@ -206,6 +216,13 @@ def run_threaded_session(ctrl_t, audio_t, img_t, out_dir: str) -> int:
                           % (stats.packages, stats.frames, stats.seconds,
                              stats.lost_packages, stats.decode_errors,
                              stats.output_path))
+                elif cmd in ("wait", "sleep"):
+                    try:
+                        secs = float(args[1]) if len(args) > 1 else 1.0
+                    except ValueError:
+                        print("usage: wait <seconds>")
+                        continue
+                    time.sleep(min(max(secs, 0.0), 3600.0))
                 else:
                     print("unknown command: %r (try 'help')" % line)
             except EduTimeoutError as exc:
@@ -433,6 +450,15 @@ def run_mac_session(bt_addr: str, out_dir: str) -> int:
                         else:
                             request(CommandId.AUDIO_STOP)
                             stop_wav()
+                    elif cmd in ("wait", "sleep"):
+                        try:
+                            secs = float(args[1]) if len(args) > 1 else 1.0
+                        except ValueError:
+                            print("usage: wait <seconds>")
+                            secs = 0.0
+                        end = time.time() + min(max(secs, 0.0), 3600.0)
+                        while time.time() < end:
+                            poll()
                     else:
                         print("unknown command: %r (try 'help')" % line)
                 except EduTimeoutError as exc:
