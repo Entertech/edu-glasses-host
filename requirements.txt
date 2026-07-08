@@ -1,0 +1,9 @@
+# Host demo dependencies (Python 3.9+)
+pyserial>=3.5        # serial-port fallback transport (--ctrl-port etc.)
+opuslib>=3.0.1       # OPUS decoding (needs the native libopus, see README);
+                     # the demo degrades to .opusraw output if unavailable
+
+# macOS only (for the recommended `--bt` Bluetooth-direct mode; Windows and
+# Linux use the standard-library Bluetooth socket and need nothing extra):
+pyobjc-core>=10; sys_platform == "darwin"
+pyobjc-framework-IOBluetooth>=10; sys_platform == "darwin"
