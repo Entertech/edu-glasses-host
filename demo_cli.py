@@ -15,7 +15,7 @@ Two ways to connect:
 OS first, then::
 
     python demo_cli.py --bt AA:BB:CC:DD:EE:FF     # Windows / Linux / macOS
-    python demo_cli.py --bt auto                  # macOS: find paired "EDU-*"
+    python demo_cli.py --bt auto                  # find paired "EDU-*" glasses
 
 On Windows/Linux this uses the standard-library Bluetooth socket (no extra
 dependencies); on macOS it drives IOBluetooth (needs
@@ -669,8 +669,8 @@ def main() -> int:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--bt", metavar="ADDR",
                         help="connect via Bluetooth RFCOMM to this device "
-                             "address (AA:BB:CC:DD:EE:FF); on macOS 'auto' "
-                             "finds a paired device named EDU-*")
+                             "address (AA:BB:CC:DD:EE:FF); 'auto' finds a "
+                             "paired device named EDU-* (all platforms)")
     parser.add_argument("--ctrl-channel", type=int, default=6,
                         help="RFCOMM channel of EDU-CTRL (Windows/Linux --bt)")
     parser.add_argument("--audio-channel", type=int, default=5,
@@ -723,9 +723,15 @@ def main() -> int:
                   "serial-port options instead (see README).")
             return 1
         if args.bt == "auto":
-            print("'--bt auto' is macOS-only; pass the device address "
-                  "(shown in your OS Bluetooth settings).")
-            return 1
+            from edu_host.bt_discovery import find_paired_device
+            found = find_paired_device()
+            if found is None:
+                print("no paired EDU-* glasses found — pair them in the OS "
+                      "Bluetooth settings first, or pass --bt <address>.")
+                return 1
+            auto_addr, auto_name = found
+            print("auto-selected %s (%s)" % (auto_name, auto_addr))
+            args.bt = auto_addr
         return run_threaded_session(
             SocketRFCOMMTransport(args.bt, args.ctrl_channel, name="ctrl"),
             SocketRFCOMMTransport(args.bt, args.audio_channel, name="audio"),

@@ -15,11 +15,12 @@ description: Connect to the EDU glasses over Bluetooth SPP and verify the handsh
 
 ## 连接验证（一条命令）
 
-蓝牙地址在系统蓝牙设置里可见；**不要猜地址，问用户要**。macOS 可用 `auto`。
+蓝牙地址在系统蓝牙设置里可见；**不要猜地址，问用户要**。三平台都可用 `auto`
+（按 `EDU-` 前缀在已配对设备里自动找）。
 
 ```bash
 # macOS / Linux
-printf 'info\nquit\n' | python3 demo_cli.py --bt auto            # macOS
+printf 'info\nquit\n' | python3 demo_cli.py --bt auto            # 全平台（找已配对 EDU-*）
 printf 'info\nquit\n' | python3 demo_cli.py --bt AA:BB:CC:DD:EE:FF
 ```
 
@@ -35,7 +36,7 @@ printf 'info\nquit\n' | python3 demo_cli.py --bt AA:BB:CC:DD:EE:FF
 
 | 症状 | 处置 |
 |---|---|
-| `device not found`（mac auto） | 未配对或名字不以 `EDU-` 开头 → 系统设置里配对；或改用 `--bt <地址>` |
+| `device not found` / `no paired EDU-*` | 未配对或名字不以 `EDU-` 开头 → 系统设置里配对；或改用 `--bt <地址>`（Linux 的 auto 需要 bluetoothctl 可用） |
 | `handshake failed` | 连到了错误通道/设备 → 核对地址；Windows/Linux 尝试 `--ctrl-channel 6`（默认）附近的值 |
 | macOS 进程直接崩溃（SIGABRT，无 Python 异常） | 终端 App 缺蓝牙权限 → 系统设置 → 隐私与安全性 → 蓝牙 → 勾选正在使用的终端（Terminal/iTerm/IDE），**重开终端再试** |
 | macOS `ImportError: objc` | `pip install pyobjc-core pyobjc-framework-IOBluetooth` |

@@ -31,11 +31,12 @@ Claude Code 打开本仓库即自动可用。
 1. 眼镜开机后自动可发现（约 2 分钟窗口）；或拍照键三击后按住 5 秒手动进入配对。
 2. 先在**操作系统蓝牙设置**里配对眼镜（设备名 `EDU-Glasses-xxxx`）。
 3. 蓝牙地址（`AA:BB:CC:DD:EE:FF`）在系统蓝牙设置里可见。**不要猜地址**——
-   问用户要，或在 macOS 上用 `--bt auto`（按 `EDU-` 名称前缀自动找）。
+   问用户要，或直接用 `--bt auto`（按 `EDU-` 名称前缀在已配对设备里自动找，
+   三平台可用：macOS=IOBluetooth / Windows=注册表 / Linux=bluetoothctl）。
 
 ```bash
-python3 demo_cli.py --bt AA:BB:CC:DD:EE:FF   # 全平台
-python3 demo_cli.py --bt auto                # 仅 macOS
+python3 demo_cli.py --bt auto                # 全平台（推荐）
+python3 demo_cli.py --bt AA:BB:CC:DD:EE:FF   # 显式地址
 ```
 
 Windows/Linux 的 RFCOMM 通道号默认 ctrl=6 / audio=5 / img=4，固件侧注册顺序
@@ -94,7 +95,7 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 单元测试不需要眼镜、不需要蓝牙、不需要任何第三方依赖：
 
 ```bash
-python3 -m unittest discover -s tests -v    # 41 tests，应全绿
+python3 -m unittest discover -s tests -v    # 51 tests，应全绿
 python3 -m py_compile demo_cli.py edu_host/*.py
 ```
 
@@ -113,6 +114,7 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/transport.py` | Transport 抽象 + 串口实现（pyserial 懒加载） |
 | `edu_host/bt_socket.py` | Windows/Linux 标准库 RFCOMM socket |
 | `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
+| `edu_host/bt_discovery.py` | Windows/Linux 已配对设备枚举（`--bt auto`） |
 | `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
 | `demo_cli.py` | 交互/管道 REPL；平台分发（darwin → mac 会话，其余 → 线程会话） |
 | `examples/headset_demo.py` | A2DP/HFP 演示（sounddevice 按设备名收放音） |
