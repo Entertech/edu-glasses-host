@@ -47,14 +47,30 @@ def pump(seconds: float) -> None:
 
 def find_device(bt_addr: Optional[str] = None,
                 name_prefix: str = "EDU-"):
-    """Return an IOBluetoothDevice by address, or by paired-name prefix."""
-    if bt_addr:
+    """Return an IOBluetoothDevice by address, or auto-pick a paired one.
+
+    Auto-pick prefers a device that is **currently connected** (isConnected),
+    because that is the one the demo can actually talk to — a paired-but-
+    offline device would just time out. If none is connected: a single
+    match is returned; multiple matches raise
+    :class:`~edu_host.bt_discovery.AmbiguousGlassesError` so the caller asks
+    for an explicit --bt <address> instead of guessing.
+    """
+    if bt_addr and bt_addr != "auto":
         return IOBluetooth.IOBluetoothDevice.deviceWithAddressString_(
             bt_addr.replace(":", "-"))
-    for dev in (IOBluetooth.IOBluetoothDevice.pairedDevices() or []):
-        name = dev.name()
-        if name and str(name).startswith(name_prefix):
+
+    matches = [dev for dev in (IOBluetooth.IOBluetoothDevice.pairedDevices() or [])
+               if dev.name() and str(dev.name()).startswith(name_prefix)]
+    for dev in matches:
+        if dev.isConnected():
             return dev
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        from .bt_discovery import AmbiguousGlassesError
+        raise AmbiguousGlassesError(
+            [(str(d.getAddressString()), str(d.name())) for d in matches])
     return None
 
 

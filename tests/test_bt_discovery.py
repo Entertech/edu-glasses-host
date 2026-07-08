@@ -82,3 +82,76 @@ class TestSplitCommand(unittest.TestCase):
     def test_plain_tokens(self):
         self.assertEqual(self.demo_cli.split_command("led inner blink green fast"),
                          ["led", "inner", "blink", "green", "fast"])
+
+
+class TestAmbiguityAndConnected(unittest.TestCase):
+    """已连接优先 + 多台匹配报歧义（bt_discovery 的连接状态过滤）。"""
+
+    def setUp(self):
+        import edu_host.bt_discovery as bd
+        self.bd = bd
+
+    def test_ambiguous_error_lists_all(self):
+        from edu_host.bt_discovery import AmbiguousGlassesError
+        matches = [("8C:AA:B5:11:11:11", "EDU-Glasses-0001"),
+                   ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
+        err = AmbiguousGlassesError(matches)
+        self.assertIn("EDU-Glasses-0001", str(err))
+        self.assertIn("EDU-Glasses-0066", str(err))
+        self.assertEqual(err.matches, matches)
+
+    def test_connected_preferred_over_paired(self):
+        # Linux 路径：已连接列表命中即返回，不看已配对的其它设备
+        bd = self.bd
+        orig_plat = bd.sys.platform
+        orig_conn = bd._connected_devices_linux
+        orig_paired = bd._paired_devices_linux
+        try:
+            bd.sys.platform = "linux"
+            bd._connected_devices_linux = lambda: [
+                ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
+            bd._paired_devices_linux = lambda: [
+                ("8C:AA:B5:11:11:11", "EDU-Glasses-0001"),
+                ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
+            got = bd.find_paired_device()
+            self.assertEqual(got, ("8C:AA:B5:66:66:66", "EDU-Glasses-0066"))
+        finally:
+            bd.sys.platform = orig_plat
+            bd._connected_devices_linux = orig_conn
+            bd._paired_devices_linux = orig_paired
+
+    def test_multiple_paired_none_connected_raises(self):
+        from edu_host.bt_discovery import AmbiguousGlassesError
+        bd = self.bd
+        orig_plat = bd.sys.platform
+        orig_conn = bd._connected_devices_linux
+        orig_paired = bd._paired_devices_linux
+        try:
+            bd.sys.platform = "linux"
+            bd._connected_devices_linux = lambda: []
+            bd._paired_devices_linux = lambda: [
+                ("8C:AA:B5:11:11:11", "EDU-Glasses-0001"),
+                ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
+            with self.assertRaises(AmbiguousGlassesError):
+                bd.find_paired_device()
+        finally:
+            bd.sys.platform = orig_plat
+            bd._connected_devices_linux = orig_conn
+            bd._paired_devices_linux = orig_paired
+
+    def test_single_paired_returned(self):
+        bd = self.bd
+        orig_plat = bd.sys.platform
+        orig_conn = bd._connected_devices_linux
+        orig_paired = bd._paired_devices_linux
+        try:
+            bd.sys.platform = "linux"
+            bd._connected_devices_linux = lambda: []
+            bd._paired_devices_linux = lambda: [
+                ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
+            self.assertEqual(bd.find_paired_device(),
+                             ("8C:AA:B5:66:66:66", "EDU-Glasses-0066"))
+        finally:
+            bd.sys.platform = orig_plat
+            bd._connected_devices_linux = orig_conn
+            bd._paired_devices_linux = orig_paired

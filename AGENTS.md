@@ -31,8 +31,8 @@ Claude Code 打开本仓库即自动可用。
 1. 眼镜开机后自动可发现（约 2 分钟窗口）；或拍照键三击后按住 5 秒手动进入配对。
 2. 先在**操作系统蓝牙设置**里配对眼镜（设备名 `EDU-Glasses-xxxx`）。
 3. 蓝牙地址（`AA:BB:CC:DD:EE:FF`）在系统蓝牙设置里可见。**不要猜地址**——
-   问用户要，或直接用 `--bt auto`（按 `EDU-` 名称前缀在已配对设备里自动找，
-   三平台可用：macOS=IOBluetooth / Windows=注册表 / Linux=bluetoothctl）。
+   问用户要，或直接用 `--bt auto`（**优先当前已连接**的 `EDU-*` 设备：macOS/
+   Linux 能查连接状态直接选中；Windows 多台配对时报歧义要求 --bt 指定）。
 
 ```bash
 python3 demo_cli.py --bt auto                # 全平台（推荐）

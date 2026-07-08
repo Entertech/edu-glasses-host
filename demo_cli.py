@@ -381,7 +381,12 @@ def run_mac_session(bt_addr: str, out_dir: str, ota_chunk_size: int = 512,
                                        extract_opus_packet)
     from edu_host.protocol import AirImgStreamParser, ImageReassembler
 
-    dev = mac_bt.find_device(None if bt_addr == "auto" else bt_addr)
+    from edu_host.bt_discovery import AmbiguousGlassesError
+    try:
+        dev = mac_bt.find_device(None if bt_addr == "auto" else bt_addr)
+    except AmbiguousGlassesError as exc:
+        print(exc)
+        return 1
     if dev is None:
         print("device not found. Pair the glasses first (System Settings > "
               "Bluetooth); with --bt auto the name must start with 'EDU-'.")
@@ -734,8 +739,13 @@ def main() -> int:
                   "serial-port options instead (see README).")
             return 1
         if args.bt == "auto":
-            from edu_host.bt_discovery import find_paired_device
-            found = find_paired_device()
+            from edu_host.bt_discovery import (AmbiguousGlassesError,
+                                               find_paired_device)
+            try:
+                found = find_paired_device()
+            except AmbiguousGlassesError as exc:
+                print(exc)
+                return 1
             if found is None:
                 print("no paired EDU-* glasses found — pair them in the OS "
                       "Bluetooth settings first, or pass --bt <address>.")

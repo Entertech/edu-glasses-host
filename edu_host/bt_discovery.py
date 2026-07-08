@@ -25,6 +25,17 @@ DEFAULT_NAME_PREFIX = "EDU-"
 PairedDevice = Tuple[str, str]
 
 
+class AmbiguousGlassesError(RuntimeError):
+    """找到多台匹配的已配对设备，且无法判断哪台当前已连接。"""
+
+    def __init__(self, matches):
+        self.matches = matches
+        listing = ", ".join("%s (%s)" % (name, addr) for addr, name in matches)
+        super().__init__(
+            "找到多台匹配的已配对设备但无法确定哪台已连接，"
+            "请用 --bt <地址> 指定其一：" + listing)
+
+
 # -- 纯解析函数（可无平台单测） ------------------------------------------
 
 def _format_address(hex12: str) -> Optional[str]:
@@ -116,17 +127,46 @@ def _paired_devices_linux() -> List[PairedDevice]:
     return []
 
 
+def _connected_devices_linux():
+    """当前已连接的经典蓝牙设备（BlueZ 'devices Connected'）。
+
+    老版本 bluetoothctl 没有该子命令时输出为空，回退到已配对枚举。
+    """
+    try:
+        out = subprocess.run(["bluetoothctl", "devices", "Connected"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return parse_bluetoothctl_devices(out.stdout)
+
+
 def find_paired_device(name_prefix: str = DEFAULT_NAME_PREFIX
                        ) -> Optional[PairedDevice]:
-    """返回第一个名字以 *name_prefix* 开头的已配对设备 (地址, 名字)。
+    """返回要连接的眼镜 (地址, 名字)，**优先当前已连接**的匹配设备。
 
-    仅 Windows / Linux；macOS 请用 :mod:`edu_host.mac_bt`。找不到（或平台
-    不支持枚举）返回 None——调用方应提示用户先配对或显式传地址。
+    仅 Windows / Linux；macOS 请用 :mod:`edu_host.mac_bt`。
+
+    - Linux：先查已连接设备（bluetoothctl），命中即返回——已配对但离线的
+      设备不会被选中。
+    - 无法判断连接状态时（Windows 注册表不含连接状态，或 Linux 无已连接
+      匹配）：唯一匹配直接返回；多台匹配抛 :class:`AmbiguousGlassesError`，
+      要求用 --bt <地址> 显式指定，避免盲选到离线设备。
+
+    找不到（或平台不支持枚举）返回 None。
     """
-    if sys.platform.startswith("win"):
-        devices = _paired_devices_windows()
-    elif sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux"):
+        connected = pick_by_prefix(_connected_devices_linux(), name_prefix)
+        if connected is not None:
+            return connected
         devices = _paired_devices_linux()
+    elif sys.platform.startswith("win"):
+        devices = _paired_devices_windows()
     else:
         return None
-    return pick_by_prefix(devices, name_prefix)
+    matches = [(addr, name) for addr, name in devices
+               if name.startswith(name_prefix)]
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    raise AmbiguousGlassesError(matches)
