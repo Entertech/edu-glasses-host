@@ -18,7 +18,7 @@ from . import protocol
 from .audio_client import AudioStats, AudioStreamClient
 from .client import EduClient, EduClientError, EduStatusError, EduTimeoutError, Response
 from .image_client import ImageClient
-from .ota_client import OTAClient, ProgressCallback, UpdateResultResponse
+from .ota_client import OTAClient, OTAFirmwareImage, ProgressCallback, UpdateResultResponse
 from .protocol import (CommandId, CompletedImage, DeviceInfo, EduEvent, HelloAck,
                        ImgStateEvent, CaptureEvt, SensorData, Status, Tone)
 from .transport import SerialTransport
@@ -410,6 +410,8 @@ class EduSession:
             raise EduClientError("stop recording or finish the pending photo before OTA")
         if self._ota_transport is None:
             raise EduUnsupportedError("OTA service (0x2026) unavailable")
+        # Reject invalid files before touching any live Bluetooth channel.
+        OTAFirmwareImage.parse(Path(filename).read_bytes())
         client = OTAClient(self._ota_transport, pump=self.poll if self._pump else None,
                            max_send_data_payload=chunk_size,
                            packet_interval_s=packet_interval_ms / 1000.0)
@@ -436,17 +438,20 @@ class EduSession:
                     self._recording = False
                     self._audio.stop(close_transport=self._pump is None)
         finally:
+            # Mac closes must follow open order; reverse order can leave an RFCOMM channel alive.
+            first = self._client if self._pump else self._image
+            last = self._image if self._pump else self._client
             try:
-                if self._image:
-                    self._image.close()
+                if first:
+                    first.close()
             finally:
                 try:
                     if self._audio_transport:
                         self._audio_transport.close()
                 finally:
                     try:
-                        if self._client:
-                            self._client.close()
+                        if last:
+                            last.close()
                     finally:
                         self._client = self._image = self._audio = None
                         self._audio_transport = self._ota_transport = None

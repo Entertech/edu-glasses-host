@@ -176,6 +176,9 @@ class MacRFCOMMChannel:
         if self._chan is not None:
             try:
                 self._chan.closeChannel()
+                deadline = time.monotonic() + 1.0
+                while self._chan.isOpen() and time.monotonic() < deadline:
+                    pump(0.05)
             except Exception:
                 pass
             self._chan = None

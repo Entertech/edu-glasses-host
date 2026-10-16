@@ -113,6 +113,14 @@ Windows/Linux socket 与串口继续使用接收线程和原连接顺序。SDK �
 参数错误抛 `ValueError`。OTA 保留独立的 `OTAError`、
 `OTAStatusError`、`OTATimeoutError`。超时不表示设备未执行命令，SDK 不自动重发拍照等操作。
 OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请求。
+本地升级包在建立 OTA 通道前先校验，坏包不会打断当前控制会话。Mac 请通过
+`EduSession.close()` 关闭完整会话，再 `connect()`；SDK 会按打开顺序关闭通道，
+泵动 run loop 等待关闭完成，避免留下音频连接影响下一次连接。
+
+2026-10-16 已在 7036AX 开发板和 macOS 上完成新旧 SDK 的 v1 握手、信息、
+传感器、JPEG 拍照、OPUS→WAV、LED/提示音及拍照/录音断链恢复验收；
+BT 单模块 OTA 的坏头、忙状态拒绝、16 KiB 后断链续传、校验重启后回归均通过。
+Windows/Linux 蓝牙、实体按键/旋钮与 OTA 断电恢复尚未实机验证。
 
 SDK 保留 EDU v1 帧、UUID、8 条命令、4 类事件及音频/图片/OTA 格式，兼容仓库内
 已有旧固件产物；仅根据 HELLO_ACK 能力开放功能，不会假设旧固件支持新增能力。
