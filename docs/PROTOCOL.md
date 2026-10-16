@@ -174,6 +174,12 @@ N/2 秒且内容不可辨。
 本仓库即参考实现：`edu_host/` Python 包（蓝牙 socket / IOBluetooth / 串口三种
 transport、协议编解码、音频解码存 wav、图片重组存 jpg、OTA SPP 升级）+
 `demo_cli.py` 交互式 demo + `tests/` 单元测试。环境配置见仓库根 README。
+SDK 入口为 `edu_host.EduSession`；CLI 和 Notebook 复用它，不另行编码线协议。
+实现沿用 `EduClient`、音频解析/sink、图片重组/写盘和 OTA 客户端；macOS 由
+主线程轮询同一套解析器，其余 transport 使用接收线程。能力检查读取 HELLO_ACK
+的 caps，旧固件未声明的能力明确报错；拍照以完整文件落盘为完成条件，录音缺
+解码器时保存 `.opusraw`，不能将空 WAV 视为录制成功。这些是 host 实现决策，
+不改变本规格的协议、设备能力与固件产物版本。
 升级命令：`ota <firmware.bin>`（升级包由固件维护方提供）；macOS `--bt auto`
 路径通过 SDP 查找 0x2026，Windows/Linux `--bt` 默认 OTA RFCOMM channel 为 7，
 可用 `--ota-channel` 覆盖。

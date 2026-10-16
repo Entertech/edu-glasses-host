@@ -130,6 +130,8 @@ class MacRFCOMMChannel:
 
     def open(self, timeout: float = 12.0, retries: int = 1) -> None:
         """Open the channel (blocking; pumps the main run loop)."""
+        if self._chan is not None and not self.closed:
+            return
         for attempt in range(retries + 1):
             self._open_status = None
             self._delegate = _Delegate.alloc().initWithOwner_(self)

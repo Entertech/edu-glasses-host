@@ -95,7 +95,7 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
 单元测试不需要眼镜、不需要蓝牙、不需要任何第三方依赖：
 
 ```bash
-python3 -m unittest discover -s tests -v    # 51 tests，应全绿
+python3 -m unittest discover -s tests -v    # 58 tests，应全绿
 python3 -m py_compile demo_cli.py edu_host/*.py
 ```
 
@@ -109,6 +109,7 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/protocol.py` | 帧编解码、枚举、air-img 切帧/JPEG 重组（**纯 stdlib**） |
 | `edu_host/crc16.py` | CRC-16/CCITT-FALSE |
 | `edu_host/client.py` | EduClient：握手、请求/响应配对、事件分发（线程版） |
+| `edu_host/session.py` | EduSession：统一连接/能力/命令/图片完成等待/录音/事件/OTA；Mac 主线程泵动 |
 | `edu_host/audio_client.py` | 0x52 音频包解析 + OPUS→WAV |
 | `edu_host/image_client.py` | EDU-IMG 接收线程 → JPEG 落盘 |
 | `edu_host/transport.py` | Transport 抽象 + 串口实现（pyserial 懒加载） |
@@ -116,9 +117,9 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
 | `edu_host/bt_discovery.py` | Windows/Linux 已配对设备枚举（`--bt auto`） |
 | `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
-| `demo_cli.py` | 交互/管道 REPL；平台分发（darwin → mac 会话，其余 → 线程会话） |
+| `demo_cli.py` | 共用 EduSession 的交互/管道 REPL；stdin 在线程读，设备收发由 SDK 处理 |
 | `examples/headset_demo.py` | A2DP/HFP 演示（sounddevice 按设备名收放音） |
-| `examples/notebooks/` | 教学 Jupyter（`edu_notebook.EduSession` 以子进程驱动 demo_cli） |
+| `examples/notebooks/` | 教学 Jupyter（`edu_notebook.EduSession` 直接包装 SDK） |
 
 ## 修改守则（不变量）
 
@@ -132,7 +133,7 @@ python3 -m py_compile demo_cli.py edu_host/*.py
    `kIOReturnError`，按现有 ACL 重建逻辑重试。
 4. 线程会话（Windows/Linux/串口）里不要引入 pyobjc；mac 会话里不要引入
    阻塞式 `input()`（会停掉 run loop）。
-5. 新增 REPL 命令要同时改两个会话分支 + `HELP_TEXT` + README + 本文件的
+5. 新增 REPL 命令要改共用 `run_session` + `HELP_TEXT` + README + 本文件的
    recipe 表，并保持管道可用（无交互确认）。
 
 ## 常见故障排查

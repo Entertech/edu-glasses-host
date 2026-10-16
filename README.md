@@ -1,11 +1,11 @@
-# edu-glasses-host — Looktech 教育版眼镜 Python 上位机 Demo
+# edu-glasses-host — Looktech 教育版眼镜 Python SDK 与 Demo
 
 Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典蓝牙 SPP 服务与眼镜通信：
 
-配套的可追溯教育版 `.wpk` 位于 [`firmware/`](firmware/README.md)。当前产物由
-`Looktech-Glasses-Device` 的 `feat/edu-spp` 分支构建，文件名、清单和 SHA-256
-共同标明对应的固件源码提交。`.wpk` 用于 WQ 烧录工具，不可直接传给本 demo 的
-`ota` 命令（`ota` 需要另行生成的 OTA `.bin` 包）。
+配套的可追溯固件位于 [`firmware/`](firmware/README.md)：保留旧 `feat/edu-spp` 的 WPK，
+新增基于 main 的 `stereo-edu` 集成候选 WPK 和可供 SDK 使用的 Looktech OTA 外层 `.bin`。
+清单记录源码提交、构建参数、大小与 SHA-256。WPK 用于 WQ 烧录工具；SDK/CLI 的
+`ota` 命令必须使用 Looktech 外层 `.bin`，不能直接使用 WPK 或 `wqota` BT 模块内包。
 
 | 服务      | SPP UUID | RFCOMM 通道 | 用途                                   |
 |-----------|----------|-------------|----------------------------------------|
@@ -48,7 +48,75 @@ WAV、按键 / 旋钮 / 状态事件实时打印、OTA 固件升级。
 git clone https://github.com/Entertech/edu-glasses-host.git
 cd edu-glasses-host
 python3 -m pip install -r requirements.txt
+python3 -m pip install -e .
 ```
+
+## Python SDK
+
+`edu_host.EduSession` 是普通 Python 程序、CLI 和 Notebook 共用的会话入口。
+安装本包无必选运行依赖；Windows/Linux 蓝牙直连使用标准库。macOS 可安装
+`python3 -m pip install -e '.[macos]'`，串口或 WAV 解码分别可选 `.[serial]`、
+`.[audio]`；WAV 解码还需系统 libopus。安装后也可运行 `edu-glasses --bt auto`。
+
+```python
+from edu_host import EduSession, KnobEvent, LedId, LedMode, LedColor, Tone
+
+with EduSession(bt="auto", out_dir="captures") as glasses:
+    print(glasses.capabilities)             # HELLO_ACK 中的固件能力
+    print(glasses.info().fw_version_str)
+    reading = glasses.sensors()
+    print(reading.als_raw, reading.battery_temp_c, reading.btcore_temp_c)
+    jpeg = glasses.photo("lesson.jpg", timeout=30)  # 完整 JPEG 已落盘才返回
+    audio = glasses.record("lesson.wav", seconds=5)
+    print(jpeg, audio)                       # 缺解码器时 audio 为 .opusraw
+    for event in glasses.events(10):         # 返回类型化事件，无需解析打印文本
+        if isinstance(event, KnobEvent):
+            print(event.direction_name, event.delta_x, event.delta_y)
+    if glasses.supports("CONTROL"):
+        glasses.set_led(LedId.INNER, LedMode.ON, LedColor.GREEN)
+        glasses.play_tone(Tone.CLICK)
+```
+
+构造函数不连接；`with` 会自动 `connect()`/`close()`，也可显式调用这两个方法。
+`bt` 支持 `"auto"` 和显式蓝牙地址。串口后备示例：
+`EduSession(ctrl_port="COM5", audio_port="COM6", img_port="COM7", ota_port="COM8")`。
+Windows/Linux 通道可通过 `ctrl_channel`、`audio_channel`、`img_channel`、
+`ota_channel` 覆盖（默认 6/5/4/7）；macOS 通过 SDP 查询。
+
+其他会话操作：
+
+| API | 行为 |
+|---|---|
+| `trigger_photo(path)` / `wait_photo(timeout=30)` | 分开触发与等待；ACK、IMG_STATE DONE 都不代表图片已落盘 |
+| `record_start(path)` / `record_stop()` | 返回实际路径 / `AudioStats`（包、帧、丢包、解码错误、实际路径、`decoded_to_wav`、`frames_written`） |
+| `add_event_listener(callback)` / `add_image_listener(callback)` | 类型化事件 / `(path, CompletedImage)` 回调 |
+| `wait(seconds)` / `poll(seconds=0.05)` | 保持接收并分发回调；`poll` 也返回本次收到的事件 |
+| `reboot()` / `set_led(...)` / `play_tone(...)` | 8 条现有控制命令中的重启、LED、提示音；非 OK 抛异常 |
+| `ota("firmware.bin", progress=callback)` | 复用现有 OTA 客户端；回调参数 `(stage, done, total)`，返回 `UpdateResultResponse` |
+
+录音保留固件原有 MIC/CALL 自动切换，用 `AudioStateEvent.source_name` 观察来源，
+SDK 不强制指定通话来源。无 opuslib/libopus 时保存原始帧 `.opusraw`，不会制造
+空 WAV；没有写入任何有效帧时 `record_stop()` 报错。图片接收同样以实际写盘为准。
+
+**macOS 主线程约束**：蓝牙 `connect()`、请求、等待和关闭都必须在进程主线程
+执行。IOBluetooth 的异步回调由主线程 run loop 投递；SDK 在请求和 `wait()` /
+`events()` / `poll()` 中泵动它。空闲或录音期间请调用这些方法，避免长时间
+`time.sleep()` 或阻塞等待。SDK 不会把 Mac 通道交给后台 `EduClient`。
+Mac 在握手前打开 CTRL/AUDIO/IMG，录音结束保留音频连接、会话关闭时统一关闭；
+Windows/Linux socket 与串口继续使用接收线程和原连接顺序。SDK 方法按顺序调用；监听回调在
+调用者线程分发，回调应简短，且不要在回调内重入设备请求。
+
+异常可从 `edu_host` 导入：`EduUnsupportedError` 表示旧固件缺能力位或缺通道；
+`EduTimeoutError` 表示响应或图片等待超时；`EduStatusError` 保留设备返回的
+`cmd_id/status/data`（BUSY、INVALID 等）；它们都继承 `EduClientError`。
+连接失败也可能抛 `OSError` 或 `AmbiguousGlassesError`（多台设备需指定地址）；
+参数错误抛 `ValueError`。OTA 保留独立的 `OTAError`、
+`OTAStatusError`、`OTATimeoutError`。超时不表示设备未执行命令，SDK 不自动重发拍照等操作。
+OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请求。
+
+SDK 保留 EDU v1 帧、UUID、8 条命令、4 类事件及音频/图片/OTA 格式，兼容仓库内
+已有旧固件产物；仅根据 HELLO_ACK 能力开放功能，不会假设旧固件支持新增能力。
+原有 `EduClient`、`AudioStreamClient`、`ImageClient`、transport API 继续可用。
 
 ---
 
@@ -61,8 +129,8 @@ python3 -m pip install -r requirements.txt
 
 ### 1.2 查找串口（仅串口后备方式需要；推荐直接用 `--bt`）
 
-配对后 macOS 会为设备的**每个 SPP 服务**各建一个 `/dev/cu.*` 虚拟串口
-（连接后可能要等几秒）。列出候选：
+macOS 优先使用 `--bt` 的 IOBluetooth 路径，不保证系统创建虚拟串口。只有系统或外部适配器
+实际提供串口时才使用后备路径。列出候选：
 
 ```bash
 python3 demo_cli.py --list
@@ -220,8 +288,10 @@ printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.p
   | `03_live_sensors` | 光敏 ALS 实时曲线（遮挡传感器看变化） |
   | `04_knob_events` | 旋钮事件累积成表盘指针 |
 
-  笔记本经 `examples/notebooks/edu_notebook.py` 的 `EduSession` 驱动
-  `demo_cli` 子进程，三平台代码一致，无需直接操作蓝牙 API。
+  笔记本经 `examples/notebooks/edu_notebook.py` 的薄包装直接调用 SDK，
+  不启动 CLI 子进程、不解析人类可读输出。先在仓库根目录安装 `pip install -e .`；
+  macOS 仍需主线程执行单元格。教学包装保留 `s.sensors()` 字典与 `knob_delta()`，
+  `events()` 的详情为类型化事件，`record()` 返回实际 WAV 或 `.opusraw` 路径。
 
 ### 会话示例
 
