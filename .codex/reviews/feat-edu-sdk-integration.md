@@ -5,7 +5,7 @@
 - Base：e7142c6499e7ccc22e51237ca4e9f5f916afa407
 - Code Head：本分支 0.2.0 集成提交
 - 审查轮次：初审 + 已修问题闭环
-- 最近验证：58 项已有测试、py_compile、临时 fake/断言、真实 OTA 外包 fake 传输、wheel 构建/导入
+- 最近验证：58 项已有测试、py_compile、wheel 源码一致与实机导入、HCI 独立关闭/重开、工作进程退出与 EOF、EDU eca5981f 真机恢复与 OTA
 
 | ID | 严重级别 | 状态 | 代码位置 | 问题描述 | 影响 | 修复建议 | 验证方式 | 备注 |
 |---|---|---|---|---|---|---|---|---|
@@ -23,6 +23,13 @@
 |---|---|---|---|---|---|---|---|---|
 | R006 | Major | Fixed | [session.py:440](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/session.py:440)、[mac_bt.py:175](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/mac_bt.py:175) | Mac 异步关闭未完成便释放引用，反向关闭可留下 AUDIO 物理连接 | 同进程重连时补开通道重建 ACL，造成 CTRL 超时或 closed | Mac 按 CTRL→AUDIO→IMG 关闭，每通道泵动回调等待关闭，上限 1 秒 | 断链恢复 8 项通过；OTA 后同 EduSession 实例两轮连接/拍照/录音成功 | Windows/Linux 关闭顺序保留 |
 | R007 | Major | Fixed | [session.py:414](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/session.py:414) | 本地 OTA 文件校验发生在开通道后 | 坏头拒绝仍会触发 Mac 通道关闭，影响正在使用的 CTRL | 开 OTA 通道前复用 OTAFirmwareImage.parse 预校验 | 修复前 info 超时；修复后同会话 ValueError→info→完整 JPEG 通过 | OTA 传输代码不改，未绕过设备 CRC |
-| R008 | Minor | Follow-up | [mac_bt.py:175](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/mac_bt.py:175) | 本机 macOS 27.0 低层单独关闭非首个 RFCOMM 通道可能实际关闭其他通道 | 自行操作低层 channel 的程序不能假定其他链路仍在线 | 教学程序使用完整 EduSession.close/connect；继续跨 macOS 版本核对 IOBluetooth 行为 | HCI DISC 与板端 SPP 状态交叉验证；完整会话恢复路径已通过 | 不改变协议或兼容层 API；不把底层部分通道关闭算可靠公开能力 |
+| R008 | Major | Fixed | [mac_bt.py:179](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/mac_bt.py:179) | macOS 27 同进程多 RFCOMM 关闭可路由到其他通道，原生 Objective-C 同样复现 | 独立关闭 IMG/AUDIO/OTA 会破坏 CTRL；SDK OTA 结束后可能无法继续使用 | 每条原生通道由独立进程主 run loop 持有，私有 Pipe 透传字节，关闭等待回收；已有其他通道时禁止 ACL 重建 | 正常打开顺序两轮独立关闭/重开/重复关闭；HCI DISC4/5/7 与持续成功的 info | 不改 v1 或公开 SDK API；系统内部具体缺陷未修改；其他 macOS 版本待验证 |
 
 最新验证：58 项原有测试、py_compile、Mac 实机新旧 SDK 拍照/录音/控制、坏 CRC/非法请求、通道断连恢复；BT OTA 坏头/忙时拒绝、16 KiB 后断开续传、全量校验重启，以及升级后两轮同实例回归均通过。Windows/Linux/首次绑定/OTA 断电未测。未新增单元测试文件。
+
+2026-10-16 Mac 单通道关闭复核：原生复现、进程隔离与 HCI 已闭环。快速重连拍照另有固件清理定时器竞态，已追加 eca5981f 修复，双构建、烧录后八项恢复和 5 秒窗口四张图验收通过；见 [本轮回归](../../docs/MAC_REGRESSION_20261016.md)。
+
+最终闭环：eca5981f 新 OTA 外包断开首块后续传、设备校验/重启通过；最终 wheel
+同实例三轮 JPEG/WAV、新旧 CLI 全流程通过；工作进程意外退出、父进程 EOF、
+无效通道补开均未误断 CTRL。日志和串口已释放；无新增未闭环的 Critical/Major。
+保留跨 macOS 版本、Windows/Linux、冻结程序、旧 SDK 整包 OTA 和断电等实测边界。

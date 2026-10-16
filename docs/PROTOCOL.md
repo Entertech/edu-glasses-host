@@ -176,7 +176,10 @@ transport、协议编解码、音频解码存 wav、图片重组存 jpg、OTA SP
 `demo_cli.py` 交互式 demo + `tests/` 单元测试。环境配置见仓库根 README。
 SDK 入口为 `edu_host.EduSession`；CLI 和 Notebook 复用它，不另行编码线协议。
 实现沿用 `EduClient`、音频解析/sink、图片重组/写盘和 OTA 客户端；macOS 由
-主线程轮询同一套解析器，其余 transport 使用接收线程。能力检查读取 HELLO_ACK
+主线程轮询同一套解析器，底层每条原生通道在独立子进程的主线程接收，再经私有管道
+交给解析器，规避 macOS 27 同进程多通道关闭路由串线；close 等待回收子进程，
+重建 ACL 仅允许发生在同设备没有其他已打开通道时。其余 transport 使用接收线程。
+这些字节转发不引入新的蓝牙协议或公开 SDK 参数。能力检查读取 HELLO_ACK
 的 caps，旧固件未声明的能力明确报错；拍照以完整文件落盘为完成条件，录音缺
 解码器时保存 `.opusraw`，不能将空 WAV 视为录制成功。这些是 host 实现决策，
 不改变本规格的协议、设备能力与固件产物版本。

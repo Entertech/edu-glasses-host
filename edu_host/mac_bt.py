@@ -10,6 +10,9 @@ serial ports, so this module drives IOBluetooth directly. Two hard-won rules
 2. A first open attempt can fail with ``kIOReturnError`` if bluetoothd holds
    stale channel state; closing and reopening the ACL connection fixes it.
 
+Each native channel runs in its own child process to avoid the macOS 27
+IOBluetooth bug that closes a sibling channel in the same process.
+
 Therefore this module gives you :class:`MacRFCOMMChannel` objects plus an
 explicit :func:`pump` you must call from the main thread; reads only drain
 the RX buffer. ``demo_cli.py`` runs its REPL around this pump.
@@ -22,6 +25,10 @@ Terminal so Terminal is the responsible process).
 from __future__ import annotations
 
 import time
+import subprocess
+import sys
+import weakref
+from multiprocessing import Pipe
 from typing import Dict, List, Optional
 
 import objc  # type: ignore
@@ -115,7 +122,7 @@ class _Delegate(NSObject):
         self._owner.closed = True
 
 
-class MacRFCOMMChannel:
+class _NativeRFCOMMChannel:
     """One RFCOMM channel. Main-thread only; drive it with :func:`pump`."""
 
     def __init__(self, dev, channel_id: int, name: str = "") -> None:
@@ -128,40 +135,24 @@ class MacRFCOMMChannel:
         self._delegate = None
         self.closed = False
 
-    def open(self, timeout: float = 12.0, retries: int = 1) -> None:
-        """Open the channel (blocking; pumps the main run loop)."""
-        if self._chan is not None and not self.closed:
-            return
-        for attempt in range(retries + 1):
-            self._open_status = None
-            self._delegate = _Delegate.alloc().initWithOwner_(self)
-            res, chan = self._dev.openRFCOMMChannelAsync_withChannelID_delegate_(
-                None, self.channel_id, self._delegate)
-            if res == 0:
-                self._chan = chan
-                end = time.time() + timeout
-                while self._open_status is None and time.time() < end:
-                    pump(0.1)
-                if self._open_status == 0:
-                    self.closed = False
-                    return
-                try:
-                    chan.closeChannel()
-                except Exception:
-                    pass
-            if attempt == 0 and retries > 0:
-                # stale bluetoothd channel state: rebuild the ACL once
-                self._dev.closeConnection()
-                pump(3.0)
-                self._dev.openConnection()
-                pump(2.0)
-        raise IOError("%s: RFCOMM open failed (status=%s)"
-                      % (self.name, self._open_status))
+    def open(self, timeout: float = 12.0) -> None:
+        self._delegate = _Delegate.alloc().initWithOwner_(self)
+        status, self._chan = self._dev.openRFCOMMChannelAsync_withChannelID_delegate_(
+            None, self.channel_id, self._delegate)
+        if status != 0:
+            raise IOError("RFCOMM open failed (status=%s)" % status)
+        deadline = time.monotonic() + timeout
+        while self._open_status is None and time.monotonic() < deadline:
+            pump(0.1)
+        if self._open_status != 0:
+            raise IOError("RFCOMM open failed (status=%s)" % self._open_status)
 
     def write(self, data: bytes) -> None:
         if self._chan is None or self.closed:
             raise IOError("%s: channel not open" % self.name)
-        self._chan.writeSync_length_(data, len(data))
+        status = self._chan.writeSync_length_(data, len(data))
+        if status != 0:
+            raise IOError("%s: RFCOMM write failed (status=%s)" % (self.name, status))
 
     def read(self, max_bytes: int = 65536) -> bytes:
         """Drain up to *max_bytes* from the RX buffer (non-blocking)."""
@@ -183,3 +174,173 @@ class MacRFCOMMChannel:
                 pass
             self._chan = None
         self.closed = True
+
+
+class MacRFCOMMChannel:
+    """One RFCOMM channel, owned by an isolated process's main run loop.
+
+    macOS 27 can close the first channel belonging to a process instead of
+    the requested channel. One native channel per process avoids that alias.
+    """
+
+    _live = weakref.WeakSet()
+
+    def __init__(self, dev, channel_id: int, name: str = "") -> None:
+        self._dev = dev
+        self.channel_id = int(channel_id)
+        self.name = name or ("ch%d" % channel_id)
+        self.closed = False
+        self._rx = bytearray()
+        self._conn = self._proc = None
+
+    def _receive(self, expected=None, timeout=0.0):
+        deadline = time.monotonic() + timeout
+        while self._conn is not None:
+            if not self._conn.poll(max(0.0, deadline - time.monotonic())):
+                if expected:
+                    raise IOError("%s: worker %s timed out" % (self.name, expected))
+                return
+            try:
+                kind, value = self._conn.recv()
+            except (EOFError, OSError) as exc:
+                self.closed = True
+                raise IOError("%s: RFCOMM worker exited" % self.name) from exc
+            if kind == "data":
+                self._rx.extend(value)
+            elif kind == "closed":
+                self.closed = True
+                if expected:
+                    raise IOError("%s: channel closed" % self.name)
+                return
+            elif kind == "error":
+                self.closed = True
+                raise IOError("%s: %s" % (self.name, value))
+            elif kind == expected:
+                return value
+
+    def open(self, timeout: float = 12.0, retries: int = 1) -> None:
+        if self._proc is not None and not self.closed:
+            try:
+                self._receive()
+            except OSError:
+                self.closed = True
+            if not self.closed:
+                return
+        self.close()
+        address = str(self._dev.getAddressString())
+        # -c also works for notebooks and scripts without a __main__ guard.
+        code = ("import sys; sys.path[:0] = %r; "
+                "from edu_host.mac_bt import _channel_worker; "
+                "_channel_worker(int(sys.argv[1]), sys.argv[2], "
+                "int(sys.argv[3]), float(sys.argv[4]))") % sys.path
+        for attempt in range(retries + 1):
+            self._conn, child = Pipe()
+            try:
+                self._proc = subprocess.Popen(
+                    [sys.executable, "-c", code, str(child.fileno()), address,
+                     str(self.channel_id), str(timeout)],
+                    pass_fds=(child.fileno(),), stdin=subprocess.DEVNULL)
+            except BaseException:
+                self.close()
+                raise
+            finally:
+                child.close()
+            try:
+                self._receive("open", timeout + 3.0)
+                self._rx.clear()
+                self.closed = False
+                self._live.add(self)
+                return
+            except BaseException as exc:
+                self.close()
+                if not isinstance(exc, OSError):
+                    raise
+                others = any(str(t._dev.getAddressString()) == address
+                             and not t.closed for t in self._live)
+                if attempt == retries or others:
+                    raise
+                # Rebuilding an ACL is safe only before any sibling is open.
+                self._dev.closeConnection()
+                pump(3.0)
+                self._dev.openConnection()
+                pump(2.0)
+
+    def write(self, data: bytes) -> None:
+        if self._conn is None or self.closed:
+            raise IOError("%s: channel not open" % self.name)
+        try:
+            self._conn.send(("write", data))
+            self._receive("write", 10.0)
+        except OSError:
+            self.close()
+            raise
+
+    def read(self, max_bytes: int = 65536) -> bytes:
+        if not self.closed:
+            self._receive()
+        out = bytes(self._rx[:max_bytes])
+        del self._rx[:max_bytes]
+        return out
+
+    def close(self) -> None:
+        try:
+            if self._conn is not None:
+                try:
+                    self._conn.send(("close", None))
+                    self._receive("close", 2.0)
+                except (OSError, EOFError):
+                    pass
+        finally:
+            if self._conn is not None:
+                self._conn.close()
+            if self._proc is not None:
+                try:
+                    self._proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait()
+            self._conn = self._proc = None
+            self._rx.clear()
+            self.closed = True
+            self._live.discard(self)
+
+
+def _channel_worker(fd: int, address: str, channel_id: int, timeout: float) -> None:
+    """Private pipe endpoint; each native channel stays on its main thread."""
+    from multiprocessing.connection import Connection
+    conn = Connection(fd)
+    channel = _NativeRFCOMMChannel(find_device(address), channel_id)
+    try:
+        channel.open(timeout=timeout)
+        conn.send(("open", None))
+        run_loop = NSRunLoop.currentRunLoop()
+        while True:
+            run_loop.runMode_beforeDate_(
+                NSDefaultRunLoopMode, NSDate.dateWithTimeIntervalSinceNow_(0.005))
+            data = channel.read()
+            if data:
+                conn.send(("data", data))
+            if channel.closed:
+                conn.send(("closed", None))
+                break
+            if not conn.poll():
+                continue
+            command, data = conn.recv()
+            if command == "close":
+                channel.close()
+                conn.send(("close", None))
+                break
+            if command != "write":
+                raise ValueError("unknown worker command")
+            channel.write(data)
+            conn.send(("write", None))
+    except (EOFError, BrokenPipeError):
+        pass
+    except Exception as exc:
+        try:
+            conn.send(("error", str(exc)))
+        except (EOFError, OSError):
+            pass
+    finally:
+        channel.close()
+        conn.close()

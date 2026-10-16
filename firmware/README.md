@@ -4,7 +4,24 @@
 2026-10-16 已在 LTFTDI07 开发板完成 pro / edu 烧录、Samsung 公版 App 回归、
 新旧 SDK 的 EDU v1 功能和拍照/录音断链恢复、BT 单模块 OTA 错误拒绝与断点续传验收。
 
-## 当前 main 集成候选
+## 当前修复候选 eca5981f
+
+基于同一 main 的 `feat/edu-main-integration`，提交 `eca5981f` 在 EDU 门控内修复
+旧图传 cleanup timer 取消下一张照片预留的竞态，公版预处理输出保持不变。
+SDK 同时修复 macOS 27 独立关闭多条 RFCOMM 通道的路由串线。详细范围与实机
+记录见 [Mac 回归报告](../docs/MAC_REGRESSION_20261016.md)。
+
+| 用途 | 文件 | 大小 | SHA-256 |
+|---|---|---:|---|
+| WQ 工具烧录 | [EDU WPK](looktech-edu-stereo-edu-7036AX-1.2.3.4-eca5981f.wpk) | 2,307,324 B | `e8c07601fdb9156e103c060be40c256d945407ca3ee12bbd878dea70458b3374` |
+| SDK / CLI SPP OTA | [Looktech OTA 外层包](looktech-edu-stereo-edu-7036AX-1.2.3.4-eca5981f-ota.bin) | 1,836,046 B | `fa055f68daae735f43f585eb7ff890718e52657da905355dabc44b4262e41888` |
+
+Product ID、整包/BT 版本、BT 单模块范围均沿用下方配置；pack/inspect 各 CRC
+均通过。本候选已烧录开发板，默认参数下首块断链后续传约 216 秒，校验重启
+成功；之后同 SDK 实例三轮 JPEG/WAV 和新旧 CLI 回归通过。版本字符串未增加，
+识别本修复应使用源提交和文件 SHA-256。
+
+## 首轮 main 集成候选（历史）
 
 - 固件工程/芯片：`stereo-edu` / `7036AX`。
 - 源仓库：`Entertech/Looktech-Glasses-Device`。

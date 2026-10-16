@@ -99,9 +99,10 @@ SDK 不强制指定通话来源。无 opuslib/libopus 时保存原始帧 `.opusr
 空 WAV；没有写入任何有效帧时 `record_stop()` 报错。图片接收同样以实际写盘为准。
 
 **macOS 主线程约束**：蓝牙 `connect()`、请求、等待和关闭都必须在进程主线程
-执行。IOBluetooth 的异步回调由主线程 run loop 投递；SDK 在请求和 `wait()` /
-`events()` / `poll()` 中泵动它。空闲或录音期间请调用这些方法，避免长时间
-`time.sleep()` 或阻塞等待。SDK 不会把 Mac 通道交给后台 `EduClient`。
+执行。每条原生 RFCOMM 通道由一个独立的 Python 子进程持有，在该子进程的主线程
+泵动 IOBluetooth run loop；主进程通过私有管道收发字节，在 `wait()` / `events()` /
+`poll()` 中解析并分发回调。这样避免 macOS 27 同进程多通道 `closeChannel()` 误断
+其他通道。空闲或录音期间仍应调用这些方法，让 SDK 及时消费数据。
 Mac 在握手前打开 CTRL/AUDIO/IMG，录音结束保留音频连接、会话关闭时统一关闭；
 Windows/Linux socket 与串口继续使用接收线程和原连接顺序。SDK 方法按顺序调用；监听回调在
 调用者线程分发，回调应简短，且不要在回调内重入设备请求。
@@ -113,14 +114,19 @@ Windows/Linux socket 与串口继续使用接收线程和原连接顺序。SDK �
 参数错误抛 `ValueError`。OTA 保留独立的 `OTAError`、
 `OTAStatusError`、`OTATimeoutError`。超时不表示设备未执行命令，SDK 不自动重发拍照等操作。
 OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请求。
-本地升级包在建立 OTA 通道前先校验，坏包不会打断当前控制会话。Mac 请通过
-`EduSession.close()` 关闭完整会话，再 `connect()`；SDK 会按打开顺序关闭通道，
-泵动 run loop 等待关闭完成，避免留下音频连接影响下一次连接。
+本地升级包在建立 OTA 通道前先校验，坏包不会打断当前控制会话。底层
+`MacRFCOMMChannel.close()/open()` 可独立关闭、重开目标通道；重复关闭安全。
+应用退出时使用 `EduSession.close()` 释放完整会话，SDK 会等待并回收各通道进程。
+只有尚无同设备通道打开时，首次打开失败才重建 ACL 重试，避免打断已有连接。
+此实现需要可启动子进程的普通 Python 环境；单文件冻结的可执行程序尚未验证。
 
 2026-10-16 已在 7036AX 开发板和 macOS 上完成新旧 SDK 的 v1 握手、信息、
 传感器、JPEG 拍照、OPUS→WAV、LED/提示音及拍照/录音断链恢复验收；
 BT 单模块 OTA 的坏头、忙状态拒绝、16 KiB 后断链续传、校验重启后回归均通过。
 Windows/Linux 蓝牙、实体按键/旋钮与 OTA 断电恢复尚未实机验证。
+Mac 单通道关闭与固件 5 秒图传清理竞态的后续修复、HCI 及回归细节见
+[Mac 实机回归报告](docs/MAC_REGRESSION_20261016.md)。当前固件候选见
+[固件产物](firmware/README.md)。
 
 SDK 保留 EDU v1 帧、UUID、8 条命令、4 类事件及音频/图片/OTA 格式，兼容仓库内
 已有旧固件产物；仅根据 HELLO_ACK 能力开放功能，不会假设旧固件支持新增能力。
