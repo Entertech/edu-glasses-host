@@ -1,6 +1,28 @@
 # edu-glasses-host — Looktech 教育版眼镜 Python SDK 与 Demo
 
-Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典蓝牙 SPP 服务与眼镜通信：
+Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典蓝牙 SPP 服务与眼镜通信。
+
+## EDU 集成版本
+
+本 README 对应 `feat/edu-sdk-integration` 的 **0.2.0 验证候选**，配套固件为
+[Looktech-Glasses-Device / feat/edu-main-integration](https://github.com/Entertech/Looktech-Glasses-Device/tree/feat/edu-main-integration)。
+固件从 main `813ee9999eaefcdb830053d2faec65f0e2bff2c5` 迁入旧 `feat/edu-spp`
+的 EDU v1 能力，保留教学功能、重启、LED、提示音和 OTA；当前修复固件源提交为
+`eca5981f`，SDK 核心功能提交为 `4c972e2`。尚未合入两仓库 main，也未发布正式 SDK/固件。
+
+SDK 新增统一 `EduSession`，CLI 和 Notebook 直接复用它；保留原有客户端与 transport API。
+Mac 每条原生通道使用独立进程主 run loop，避免关闭 IMG/AUDIO/OTA 时误断 CTRL；
+本地 OTA 包先校验再开通道。固件复用 main 图片 route/reservation/ACK 与录音资源管理，
+并在 EDU 门控内修复 5 秒旧清理回调取消新拍照预留的问题。
+
+**公版与 EDU 是两种构建固件。** 公版默认关闭 `CONFIG_LT_EDU_MODE`，原 BLE、
+App 绑定、业务鉴权和 RPC 路径保留；EDU 通过系统经典蓝牙配对后直连 PC SPP，
+不广播 BLE、不注册 App GATT/iAP2 业务入口，不能直接作为公版 App 固件使用。
+两种固件保留经典 A2DP/HFP/AVRCP。详细隔离和构建说明见
+[固件 README](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/README.md)。
+
+HELLO/caps 用于版本与功能发现，不提供业务鉴权或学生/维护者权限分级。当前开放
+8 条白名单命令及独立 OTA；未新增 IMU、WiFi/P2P、媒体库、LTAU 或通用 App RPC 开放。
 
 配套的可追溯固件位于 [`firmware/`](firmware/README.md)：保留旧 `feat/edu-spp` 的 WPK，
 新增基于 main 的 `stereo-edu` 集成候选 WPK 和可供 SDK 使用的 Looktech OTA 外层 `.bin`。
@@ -28,7 +50,7 @@ python3 demo_cli.py --bt auto                  # 全平台：自动找已配对�
   当前已连接**的 EDU-* 设备（Linux 用 `bluetoothctl`，macOS 用 IOBluetooth
   连接状态）。Windows 注册表无连接状态：只有一台 EDU-* 配对时自动选，多台
   时会要求你用 `--bt <地址>` 指定（避免选到离线的那台）。RFCOMM 通道号默认
-  6/5/4（如固件变更可用 `--ctrl-channel` 等覆盖）。
+  6/5/4/7（如固件变更可用 `--ctrl-channel` 等覆盖）。
 - **macOS**：CPython 无蓝牙 socket 且系统不给 SPP 建串口，demo 自动改走
   IOBluetooth（SDP 动态查通道）。需要 `pip install pyobjc-core
   pyobjc-framework-IOBluetooth`；在 Terminal 里首次运行会弹一次蓝牙授权。
@@ -45,7 +67,7 @@ WAV、按键 / 旋钮 / 状态事件实时打印、OTA 固件升级。
 `opuslib` + 本机 libopus（录音输出 WAV 用）。
 
 ```bash
-git clone https://github.com/Entertech/edu-glasses-host.git
+git clone --branch feat/edu-sdk-integration https://github.com/Entertech/edu-glasses-host.git
 cd edu-glasses-host
 python3 -m pip install -r requirements.txt
 python3 -m pip install -e .
@@ -120,17 +142,47 @@ OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请�
 只有尚无同设备通道打开时，首次打开失败才重建 ACL 重试，避免打断已有连接。
 此实现需要可启动子进程的普通 Python 环境；单文件冻结的可执行程序尚未验证。
 
-2026-10-16 已在 7036AX 开发板和 macOS 上完成新旧 SDK 的 v1 握手、信息、
-传感器、JPEG 拍照、OPUS→WAV、LED/提示音及拍照/录音断链恢复验收；
-BT 单模块 OTA 的坏头、忙状态拒绝、16 KiB 后断链续传、校验重启后回归均通过。
-Windows/Linux 蓝牙、实体按键/旋钮与 OTA 断电恢复尚未实机验证。
-Mac 单通道关闭与固件 5 秒图传清理竞态的后续修复、HCI 及回归细节见
-[Mac 实机回归报告](docs/MAC_REGRESSION_20261016.md)。当前固件候选见
-[固件产物](firmware/README.md)。
+## 兼容范围与实机回归（2026-10-16）
 
-SDK 保留 EDU v1 帧、UUID、8 条命令、4 类事件及音频/图片/OTA 格式，兼容仓库内
-已有旧固件产物；仅根据 HELLO_ACK 能力开放功能，不会假设旧固件支持新增能力。
-原有 `EduClient`、`AudioStreamClient`、`ImageClient`、transport API 继续可用。
+协议仍为 EDU v1：`A5 5A` 同步字、版本/seq/LE 长度/CRC16、单帧 990 B 上限，
+4 条 SPP UUID/默认通道、8 条命令、4 类事件及音频/图片/OTA 格式保持不变。
+8 条命令覆盖拍照、开始/停止录音、传感器、信息、重启、LED、提示音；事件为
+BUTTON、KNOB、AUDIO_STATE、IMG_STATE。完整契约见 [PROTOCOL.md](docs/PROTOCOL.md)。
+功能按 HELLO_ACK caps 开放；设备没有声明的能力明确报错。
+
+| 组合 / 使用方式 | 兼容与验收边界 |
+|---|---|
+| SDK 0.2.0 + main EDU `eca5981f` | Mac SDK、CLI、JPEG、WAV、LED/提示音、异常恢复、完整 OTA 与升级后重连通过 |
+| 原样旧 SDK `e7142c6` + main EDU | 最终 Mac demo 的 v1 握手、info/sensors、拍照、录音、LED/提示音通过；旧解析器可解析新 OTA 包；首轮已测旧 OTA GET_INFO、坏头拒绝及 REBOOT，未用旧 SDK 完整传输整包 OTA |
+| SDK 0.2.0 + 旧 `feat/edu-spp` 固件 | 保留 v1 协议与能力协商，属于兼容设计；本轮未回烧旧固件复测 |
+| 原有 Python 接口 | EduClient、AudioStreamClient、ImageClient、transport API 保留；旧 SDK 原文件未反向修改，需要 Mac 独立通道关闭修复时应升级本 SDK |
+| 公版 pro 固件 | 不提供 EDU v1 服务，应使用公版 App 的 BLE/绑定/鉴权流程 |
+| Windows/Linux/串口 | 保留原传输路径与参数；本轮未做对应实机验收 |
+
+实测环境：LTFTDI07 7036AX **development 开发板**、macOS 27.0、Python 3.13.14、
+PyObjC 12.2.2、opuslib 3.0.1 与系统 libopus。SDK 核心提交 `4c972e2`、固件
+`eca5981f`；版本字段沿用既有值，请按源提交及 [固件 SHA-256 清单](firmware/README.md) 区分产物。
+
+| 验收项目 | 实测结果 |
+|---|---|
+| 最终新旧 demo | info/sensors、JPEG、OPUS→WAV、LED/提示音通过；新 JPEG 27,335 B/WAV 2.00 s，旧 JPEG 27,464 B/WAV 2.08 s；均无解码错误 |
+| 八项异常恢复 | 缺 IMG、拍照 BUSY、图传断开、拍照时 CTRL 断开、录音时 AUDIO/CTRL 断开、坏 CRC/非法请求、OTA 查询全部通过；无残缺 JPEG，恢复后音频有效 |
+| Mac 单通道关闭 | 正常打开顺序下 DISC4/5/7 与 IMG/AUDIO/OTA 对应，CTRL 连续可用；关闭/重开、重复关闭、无效通道补开、工作进程退出及父进程 EOF 清理通过 |
+| 连续拍照修复 | 初轮失败已追加固件修复；同会话间隔 4 秒拍四张，JPEG 均校验成功；三次日志确认在旧 5 秒回调到期时保护了新预留 |
+| 新包 OTA | 设备拒绝坏头、录音忙时拒绝；首个 16 KiB 后断链续传；1,836,046 B 约 216 s，校验成功并实际重启，结果 0/reboot=1；仅升级 BT |
+| 升级后三轮同实例 | 最终 wheel 三轮 connect→info→photo→record→close，3 张 720×960 JPEG、3 份 16 kHz mono/1.84 s 有效 WAV |
+| 公版隔离 | 首轮 Samsung SM-A566B 原绑定回连、BLE 鉴权、14 项 RPC、公版拍照/缩略图通过；最后一轮修复后 EDU/pro 双构建及公版预处理等价通过，未重复手机 App 回归 |
+| 软件与清理 | 原有 58 项测试、py_compile、wheel 源码一致及独立导入通过；板端 AUDIO/IMG/OTA 全关闭，图传固定频率资源和通道进程已释放，串口空闲 |
+
+JPEG 均通过独立校验，WAV 检查有效非零 PCM；LED/提示音确认的是响应和执行日志。
+原始失败与修复后的证据均保留，细节见 [Mac 回归报告](docs/MAC_REGRESSION_20261016.md) 和
+[首轮公版/EDU 报告](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/docs/test/edu-integration-hardware-20261016.md)。
+原始 HCI/日志和 JPEG/WAV 只保存在本机忽略目录，未随分支上传。
+
+**尚未实测**：首次绑定/解绑、纯 origin/main 烧录 A/B、整机、其他 macOS 版本、
+Windows/Linux 蓝牙、实体按键/旋钮、MIC/CALL 切换、灯效听感、功耗/长稳、OTA 断电或
+低电量、ISP/WiFi 升级。Mac 默认会话有 3 个通道工作进程，OTA 时最多 4 个；
+冻结可执行程序尚未验证。
 
 ---
 
