@@ -1,10 +1,18 @@
 # 教育版眼镜固件
 
-本目录保留旧 EDU v1 固件，并新增基于最新 main 的集成候选。SDK 0.2.0 兼容两者。
+本目录保留旧 EDU v1 固件和 2026-10-16 的 main 集成候选。SDK 0.2.0 保留其基础能力接口。
 2026-10-16 已在 LTFTDI07 开发板完成 pro / edu 烧录、Samsung 公版 App 回归、
 新旧 SDK 的 EDU v1 功能和拍照/录音断链恢复、BT 单模块 OTA 错误拒绝与断点续传验收。
 
-## 当前修复候选 eca5981f
+## 当前功能适配（2026-10-20）
+
+存储拍照、录像和 WiFi 原件导出需 `feat/edu-main-integration` 当前功能固件
+（源提交 `51a1d390`）及支持公版 ID/BASE/LAN 能力的 ISP；ISP 不需要 EDU 定制改动。
+本目录下列历史产物不包含这些扩展，不能据此判断新 SDK 功能不可用。请从固件维护者
+取得与硬件匹配的当前产物，并在连接后核对 `glasses.capabilities` 和
+`glasses.media_capabilities()`。接入方式见 [SDK 使用说明](../docs/SDK_GUIDE.md)。
+
+## 2026-10-16 EDU v1 修复候选 eca5981f（历史）
 
 基于同一 main 的 `feat/edu-main-integration`，提交 `eca5981f` 在 EDU 门控内修复
 旧图传 cleanup timer 取消下一张照片预留的竞态，公版预处理输出保持不变。

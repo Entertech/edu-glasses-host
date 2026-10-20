@@ -2,13 +2,18 @@
 
 Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典蓝牙 SPP 服务与眼镜通信。
 
+开发者接入请先阅读 **[SDK 使用说明](docs/SDK_GUIDE.md)**：安装与连接、能力发现、
+拍摄/录音、事件自定义、WiFi 媒体导出、错误处理及 API 索引。线协议开发见
+[PROTOCOL.md](docs/PROTOCOL.md)；本文保留 CLI 快速体验和历史兼容记录。
+
 ## EDU 集成版本
 
 本 README 对应 `feat/edu-sdk-integration` 的 **0.2.0 验证候选**，配套固件为
 [Looktech-Glasses-Device / feat/edu-main-integration](https://github.com/Entertech/Looktech-Glasses-Device/tree/feat/edu-main-integration)。
 固件从 main `813ee9999eaefcdb830053d2faec65f0e2bff2c5` 迁入旧 `feat/edu-spp`
-的 EDU v1 能力，保留教学功能、重启、LED、提示音和 OTA；当前修复固件源提交为
-`eca5981f`，SDK 核心功能提交为 `4c972e2`。尚未合入两仓库 main，也未发布正式 SDK/固件。
+的 EDU v1 能力，保留教学功能、重启、LED、提示音和 OTA；截至 2026-10-20，
+当前功能固件源提交为 `51a1d390`，SDK 功能提交为 `6f147e5`，支持存储拍照、录像及
+WiFi 原件导出。尚未合入两仓库 main，也未发布正式 SDK/固件。
 
 SDK 新增统一 `EduSession`，CLI 和 Notebook 直接复用它；保留原有客户端与 transport API。
 Mac 每条原生通道使用独立进程主 run loop，避免关闭 IMG/AUDIO/OTA 时误断 CTRL；
@@ -22,11 +27,14 @@ App 绑定、业务鉴权和 RPC 路径保留；EDU 通过系统经典蓝牙配�
 [固件 README](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/README.md)。
 
 HELLO/caps 用于版本与功能发现，不提供业务鉴权或学生/维护者权限分级。当前开放
-8 条白名单命令及独立 OTA；未新增 IMU、WiFi/P2P、媒体库、LTAU 或通用 App RPC 开放。
+8 条原有命令及 WiFi、存储拍照、录像和 ID 媒体目录扩展，OTA 使用独立通道；
+未开放 IMU、WiFi P2P、LTAU 或通用 App RPC。以 HELLO 能力及实际 ISP 查询结果为准。
 
 配套的可追溯固件位于 [`firmware/`](firmware/README.md)：保留旧 `feat/edu-spp` 的 WPK，
 新增基于 main 的 `stereo-edu` 集成候选 WPK 和可供 SDK 使用的 Looktech OTA 外层 `.bin`。
-清单记录源码提交、构建参数、大小与 SHA-256。WPK 用于 WQ 烧录工具；SDK/CLI 的
+清单记录源码提交、构建参数、大小与 SHA-256。其中保留的 2026-10-16 产物属于旧能力
+基线，不包含本轮存储拍摄和 LAN 导出扩展；新功能需固件维护者提供匹配当前分支的产物。
+WPK 用于 WQ 烧录工具；SDK/CLI 的
 `ota` 命令必须使用 Looktech 外层 `.bin`，不能直接使用 WPK 或 `wqota` BT 模块内包。
 
 | 服务      | SPP UUID | RFCOMM 通道 | 用途                                   |
@@ -57,8 +65,8 @@ python3 demo_cli.py --bt auto                  # 全平台：自动找已配对�
 
 下面的"虚拟串口"方式仅作为后备（主要用于 Windows COM 口习惯用户）。
 
-演示的功能：设备信息、传感器查询（光敏 / 温度）、拍照回传、麦克风录音存
-WAV、按键 / 旋钮 / 状态事件实时打印、OTA 固件升级。
+演示的功能：设备信息、传感器查询（光敏 / 温度）、教学小图回传、麦克风录音存
+WAV、按键 / 旋钮 / 状态事件、存储拍照、录像、WiFi 原件导出及显式删除、OTA 固件升级。
 
 > **耳机功能**（音乐播放和通话，A2DP/HFP）走操作系统的标准蓝牙音频设备，
 > *不在*本 demo 范围内——在系统里把眼镜选为音频输出/输入即可。
@@ -223,6 +231,9 @@ media_import 在交互空档保活约30秒，退出释放所属 HTTP/STA。CTRL�
 原有 `photo [out.jpg]` 仍用于教学小图回传。
 
 ## 兼容范围与实机回归（2026-10-16）
+
+本节记录旧能力基线的历史验收，不代表 2026-10-20 新增功能的完整矩阵。当前接口和
+验收边界见 [SDK 使用说明](docs/SDK_GUIDE.md#验收范围与已知边界)。
 
 协议仍为 EDU v1：`A5 5A` 同步字、版本/seq/LE 长度/CRC16、单帧 990 B 上限，
 4 条 SPP UUID/默认通道、8 条命令、4 类事件及音频/图片/OTA 格式保持不变。
