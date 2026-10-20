@@ -17,6 +17,12 @@ from .audio_client import AudioStats, AudioStreamClient
 from .image_client import ImageClient
 from .transport import SerialTransport, Transport, list_serial_ports
 from .session import EduSession, EduUnsupportedError
+from .wifi import (WifiCapabilities, WifiError, WifiNetwork, WifiSecurity,
+                   WifiStage, WifiStatus)
+from .media import (DeleteResult, DownloadResult, MediaCancelled, MediaError,
+                    MediaFile, MediaImport, MediaItem, MediaSessionError)
+from .capture import (CaptureDescriptionError, CaptureError, CaptureResult, CaptureState,
+                      CaptureTimeoutError, MediaCapabilities)
 from .bt_discovery import AmbiguousGlassesError
 from .ota_client import OTAError, OTAStatusError, OTATimeoutError, UpdateResultResponse
 from .protocol import (AudioStateEvent, ButtonEvent, CaptureEvt, CompletedImage,
@@ -37,6 +43,10 @@ __all__ = [
     "Transport",
     "list_serial_ports",
     "EduSession", "EduUnsupportedError",
+    "WifiCapabilities", "WifiError", "WifiNetwork", "WifiSecurity", "WifiStage", "WifiStatus",
+    "DeleteResult", "DownloadResult", "MediaCancelled", "MediaError", "MediaFile",
+    "MediaImport", "MediaItem", "MediaSessionError",
+    "CaptureDescriptionError", "CaptureError", "CaptureResult", "CaptureState", "CaptureTimeoutError", "MediaCapabilities",
     "AmbiguousGlassesError",
     "OTAError", "OTAStatusError", "OTATimeoutError",
     "UpdateResultResponse", "CompletedImage", "EduEvent",

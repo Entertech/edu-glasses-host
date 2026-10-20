@@ -142,6 +142,59 @@ OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请�
 只有尚无同设备通道打开时，首次打开失败才重建 ACL 重试，避免打断已有连接。
 此实现需要可启动子进程的普通 Python 环境；单文件冻结的可执行程序尚未验证。
 
+## 存储照片、录像与 WiFi 原件导出
+
+这组新接口需要配套的 EDU BT 与 ISP 固件。`media_capabilities()` 查询真实 ISP 的
+发布关联和专用 ID 目录能力；缺能力明确报不支持。SDK 仅导出有真实 ID 的照片、视频及
+登记的伴随文件，混有未索引文件不会使正常条目消失。原 `photo()` 和 `record()` 继续
+分别返回教学小图和麦克风音频。
+
+```python
+import json
+from pathlib import Path
+from edu_host import EduSession, WifiSecurity
+
+# 本地凭据文件由使用者提供；不要提交到仓库。
+credentials = json.loads(Path('wifi.json').read_text(encoding='utf-8'))
+with EduSession(bt='auto') as glasses:
+    photo = glasses.capture_saved_photo()  # 等待本次发布，含 catalog_id/media_id/revision/file
+    print(photo.media_id, photo.file)
+    glasses.video_start()                 # 等待实际 RECORDING
+    glasses.wait(5)
+    video = glasses.video_stop()          # 等待封口和真实发布，自动限时结束也可查 video_status()
+    with glasses.media_import(credentials['ssid'], credentials['password'],
+                              WifiSecurity[credentials.get('security', 'WPA2')]) as media:
+        print(media.list())
+        for result in media.download_all('captures'):
+            print(result.media.media_id, result.main_success, result.complete, result.errors)
+        # 单项：media.download(photo.media_id, 'captures')
+        # 显式删除独立调用：media.delete(photo.media_id)
+```
+
+`wifi.json` 内容为 `{"ssid":"目标网络","security":"WPA2","password":"本地密码"}`，
+权限建议仅当前用户可读。CLI 只接受文件路径，避免密码进入命令行和 REPL 输出；SDK
+不保存凭据。PC 与眼镜处于同一可达 LAN 即可，PC 可用有线网络，无需互联网。
+
+CLI 同步等待存储拍摄/封口，无需用固定 wait 猜测发布。下面命令默认保留全部原件：
+
+```bash
+printf 'photo-save\nvideo start\nwait 5\nvideo stop\nmedia open /absolute/path/wifi.json\nmedia list\nmedia download all /absolute/path/captures\nmedia close\nquit\n' | python3 demo_cli.py --bt auto
+```
+
+其他命令：`wifi caps|scan|status|disconnect`、`wifi connect <wifi.json>`、`media caps`、
+`media download <id> [directory]`、`media delete <id>`、`video status`。
+Notebook 见 [`05_wifi_media_export.ipynb`](examples/notebooks/05_wifi_media_export.ipynb)。
+
+`CaptureError.result` 区分已保存未发布、失败和结果未知；`CaptureTimeoutError.operation_id`
+可用于之后的 `media_status()` 查询，不自动重拍。`CaptureDescriptionError.result` 表示主媒体已发布、但后续描述查询失败，保留准确操作及媒体身份。下载返回逐项结果：主文件成功而 gyro
+缺失/失败仍保留 MP4，`complete=False` 并列出问题。长度校验不代表哈希校验，无 Range
+续传；每文件最多3次从头尝试，普通项失败后批量继续。默认不覆盖已有文件，不自动删源。
+
+media_import 在交互空档保活约30秒，退出释放所属 HTTP/STA。CTRL失效/取消中止整个会话，
+新连接不继承旧录像或导出。LAN 沿用公版可读、可删边界。正常停止等待远端确认；后端
+失联时保留未知状态和必要资源，避免冲突拍摄。macOS 长 HTTP I/O 由工作线程处理，调用
+主线程持续泵动蓝牙；所有 SDK 方法仍应顺序调用。
+
 ## 兼容范围与实机回归（2026-10-16）
 
 协议仍为 EDU v1：`A5 5A` 同步字、版本/seq/LE 长度/CRC16、单帧 990 B 上限，

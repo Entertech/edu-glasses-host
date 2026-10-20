@@ -57,6 +57,8 @@ class EduSession:
         self._image: Optional[ImageClient] = None
         self._ota_transport = None
         self._ota_running = False
+        self._media_import = None
+        self._video_operation = None
         self.hello_ack: Optional[HelloAck] = None
         self._incoming: queue.Queue = queue.Queue()
         self._images: queue.Queue = queue.Queue()
@@ -127,6 +129,7 @@ class EduSession:
         self._images = queue.Queue()
         self._photo_pending = False
         self._completed_photo = self._photo_error = None
+        self._video_operation = None
         try:
             ctrl, audio, image, self._ota_transport = self._transports or self._make_transports()
             self._client = EduClient(ctrl, pump=self.poll if self._pump else None)
@@ -163,7 +166,7 @@ class EduSession:
 
     @property
     def is_connected(self) -> bool:
-        return self._client is not None and self.hello_ack is not None
+        return self._client is not None and self.hello_ack is not None and self._client.is_open
 
     @property
     def capabilities(self) -> Tuple[str, ...]:
@@ -207,6 +210,53 @@ class EduSession:
 
     def info(self, timeout: float = 5.0) -> DeviceInfo:
         return DeviceInfo.parse(self._request(CommandId.GET_DEVICE_INFO, timeout=timeout).data)
+
+    def wifi_capabilities(self):
+        from .wifi import WifiClient
+        return WifiClient(self).capabilities()
+
+    def wifi_scan(self, timeout: float = 30.0):
+        from .wifi import WifiClient
+        return WifiClient(self).scan(timeout)
+
+    def wifi_connect(self, ssid: str, password: str = '', security=5, timeout: float = 70.0):
+        from .wifi import WifiClient
+        return WifiClient(self).connect(ssid, password, security, timeout)
+
+    def wifi_status(self):
+        from .wifi import WifiClient
+        return WifiClient(self).status()
+
+    def wifi_disconnect(self) -> None:
+        from .wifi import WifiClient
+        WifiClient(self).disconnect()
+
+    def media_import(self, ssid: str, password: str = '', security=5):
+        from .media import MediaImport
+        return MediaImport(self, ssid, password, security)
+
+    def media_capabilities(self):
+        from .capture import CaptureClient
+        return CaptureClient(self).capabilities()
+
+    def capture_saved_photo(self, timeout: float = 45.0):
+        from .capture import CaptureClient
+        return CaptureClient(self).photo(timeout)
+
+    def media_status(self, operation: int):
+        from .capture import CaptureClient
+        return CaptureClient(self).status(operation)
+
+    def video_start(self, timeout: float = 20.0):
+        from .capture import CaptureClient
+        return CaptureClient(self).video_start(timeout)
+
+    def video_stop(self, operation: Optional[int] = None, timeout: float = 45.0):
+        from .capture import CaptureClient
+        return CaptureClient(self).video_stop(operation, timeout)
+
+    def video_status(self, operation: Optional[int] = None):
+        return self.media_status(self._video_operation if operation is None else operation)
 
     def sensors(self, timeout: float = 5.0) -> SensorData:
         self._require(protocol.CAP_SENSORS)
@@ -428,6 +478,17 @@ class EduSession:
     def close(self) -> None:
         self._check_thread()
         try:
+            if self._media_import is not None:
+                try:
+                    self._media_import.close()
+                except Exception:
+                    log.exception("media import cleanup on close failed")
+            if self._video_operation is not None and self.is_connected:
+                try:
+                    import struct
+                    self._request(CommandId.VIDEO_STOP, struct.pack('<I', self._video_operation), timeout=2.0)
+                except Exception:
+                    log.warning("video stop on close unconfirmed; device continues owner cleanup", exc_info=True)
             if self.is_recording:
                 try:
                     if self.is_connected:

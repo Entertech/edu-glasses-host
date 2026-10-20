@@ -43,6 +43,7 @@ Bluetooth audio device directly and is NOT part of this demo.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import shlex
 import sys
@@ -50,6 +51,7 @@ from pathlib import Path
 
 from edu_host import protocol
 from edu_host import EduSession, EduClientError, EduStatusError, EduTimeoutError
+from edu_host import WifiSecurity
 from edu_host.ota_client import OTAError
 from edu_host.protocol import (CompletedImage, DeviceInfo, EduEvent, LedColor,
                                LedId, LedMode, LedSpeed, SensorData, Status, Tone)
@@ -60,6 +62,16 @@ Commands:
   info                     query device info (fw version, battery, charging)
   sensors                  query sensors (ALS raw, battery temp, btcore temp)
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
+  photo-save               capture and publish a full-size photo on the glasses
+  video start|stop|status   control stored video (stop waits for publication)
+  wifi caps|scan|status|disconnect
+  wifi connect <wifi.json>  connect using local ssid/security/password JSON
+  media caps               query actual ISP capture/catalog capabilities
+  media open <wifi.json>   connect and open one LAN import context
+  media list               list indexed photo/video IDs only
+  media download <id|all> [directory]
+  media delete <id>        explicitly delete media and registered companions
+  media close              stop the owned HTTP/STA session
   record start [out.wav]   start mic recording
   record stop              stop mic recording and finalize the WAV file
   ota <firmware.bin>       upgrade firmware over OTA SPP 0x2026
@@ -186,6 +198,59 @@ def print_ota_progress(stage: str, done: int, total: int) -> None:
         print("\r[ota] %s" % stage)
 
 
+def wifi_credentials(filename: str):
+    data = json.loads(Path(filename).read_text(encoding='utf-8'))
+    if (not isinstance(data, dict) or not isinstance(data.get('ssid'), str) or
+            not isinstance(data.get('password', ''), str)):
+        raise ValueError('WiFi JSON requires string ssid and password')
+    try:
+        raw = data.get('security', 'WPA2')
+        security = WifiSecurity[raw.upper()] if isinstance(raw, str) else WifiSecurity(raw)
+    except (KeyError, ValueError, TypeError):
+        raise ValueError('unknown WiFi security in credentials file') from None
+    return data['ssid'], data.get('password', ''), security
+
+
+def media_command(session: EduSession, args, context):
+    action = args[1] if len(args) > 1 else ''
+    if action == 'caps':
+        print(session.media_capabilities())
+    elif action == 'open' and len(args) == 3:
+        if context is not None:
+            context.close()
+        context = session.media_import(*wifi_credentials(args[2]))
+        context.__enter__()
+        print('[media] LAN ready')
+    elif action == 'close':
+        if context is not None:
+            context.close()
+        context = None
+        print('[media] closed')
+    elif action in ('list', 'download', 'delete'):
+        if context is None:
+            raise ValueError('open a media context first: media open <wifi.json>')
+        if action == 'list' and len(args) == 2:
+            items = context.list()
+            print('[media] %d indexed media' % len(items))
+            for item in items:
+                print('%d %s %s %d bytes' % (item.media_id, item.kind, item.file.name, item.file.size))
+        elif action == 'download' and len(args) in (3, 4):
+            directory = args[3] if len(args) == 4 else session.out_dir
+            progress = lambda media_id, name, done, total: print('\r[media] %d %s %d/%d bytes' % (media_id, name, done, total))
+            results = context.download_all(directory, progress) if args[2] == 'all' else (
+                context.download(int(args[2]), directory, progress),)
+            for result in results:
+                print('[media] id=%d main_success=%s complete=%s files=%s errors=%s' % (
+                    result.media.media_id, result.main_success, result.complete, result.files, result.errors))
+        elif action == 'delete' and len(args) == 3:
+            print(context.delete(int(args[2])))
+        else:
+            raise ValueError('invalid media command; see help')
+    else:
+        raise ValueError('invalid media command; see help')
+    return context
+
+
 def run_session(session: EduSession, ota_chunk_size: int = 512,
                 ota_packet_interval_ms: float = 10.0) -> int:
     """One REPL for every transport; only stdin is read on a worker thread."""
@@ -209,6 +274,7 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
     print(HELP_TEXT)
 
     lines = queue.Queue()
+    media_context = None
 
     def read_stdin():
         try:
@@ -242,6 +308,20 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
                     print_info(session.info())
                 elif cmd == "sensors":
                     print_sensors(session.sensors())
+                elif cmd == 'photo-save':
+                    print(session.capture_saved_photo())
+                elif cmd == 'video' and len(args) == 2 and args[1] in ('start', 'stop', 'status'):
+                    print(getattr(session, 'video_' + args[1])())
+                elif cmd == 'wifi' and len(args) >= 2:
+                    if args[1] == 'connect' and len(args) == 3:
+                        print(session.wifi_connect(*wifi_credentials(args[2])))
+                    elif len(args) == 2 and args[1] in ('caps', 'scan', 'status', 'disconnect'):
+                        name = 'capabilities' if args[1] == 'caps' else args[1]
+                        print(getattr(session, 'wifi_' + name)())
+                    else:
+                        raise ValueError('invalid WiFi command; see help')
+                elif cmd == 'media':
+                    media_context = media_command(session, args, media_context)
                 elif cmd == "photo":
                     # CLI filenames retain their historical cwd-relative meaning.
                     filename = Path(args[1]).resolve() if len(args) > 1 else None

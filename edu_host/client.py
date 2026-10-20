@@ -111,6 +111,11 @@ class EduClient:
             self._reader = None
         self._transport.close()
 
+    @property
+    def is_open(self) -> bool:
+        return (not self._stop.is_set() and not getattr(self._transport, 'closed', False)
+                and getattr(self._transport, 'is_open', True))
+
     # -- callbacks -----------------------------------------------------------
 
     def add_event_listener(self, callback: EventCallback) -> None:
@@ -239,6 +244,7 @@ class EduClient:
             except Exception as exc:  # port unplugged, BT dropped, ...
                 if not self._stop.is_set():
                     log.error("transport read failed: %s", exc)
+                self._stop.set()
                 break
 
     def poll(self) -> None:

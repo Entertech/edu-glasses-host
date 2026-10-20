@@ -51,7 +51,7 @@ def crc16(data: bytes) -> int:
 | 0x11 | RSP | 设备→host | `cmd_id(1) + status(1) + data`；seq 回显 CMD 的 seq |
 | 0x20 | EVT | 设备→host | `evt_id(1) + data` |
 
-图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件、bit4 控制（重启/LED/提示音）。
+图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件、bit4 控制（重启/LED/提示音）；bit5..7 扩展见 §3.1。
 
 ### status 码
 
@@ -87,6 +87,86 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 3 蓝牙已连接、11 拍照咔嚓（capturing）、12 拍照完成、27 开始录音、28 停止
 录音、29 短促点击（click）。无效编号返回 INVALID。完整可用值 0–29。
 
+
+### 3.1 存储拍摄与 LAN 导出扩展
+
+此扩展保留 v1、11B HELLO_ACK、990B 帧和旧命令。caps 新增 bit5 WIFI、bit6
+SAVED_PHOTO、bit7 VIDEO；这些位表示 BT 入口存在，使用前仍查询真实 ISP 能力。
+原 TAKE_PHOTO 返回教学小图，AUDIO_START/STOP 仍为音频推流。
+
+| cmd_id | 命令 | args | RSP data（外层 status=OK） |
+|---|---|---|---|
+| 0x20 | WIFI_EXECUTE | `operation u8 + operationArgs` | `operation u8 + kind u8 + outcome` |
+| 0x21 | SAVED_PHOTO | 无 | `operationId u32`，仅表示受理 |
+| 0x22 | VIDEO_START | 无 | `operationId u32`，仅表示受理 |
+| 0x23 | VIDEO_STOP | `operationId u32` | `operationId u32`，仅表示停止受理 |
+| 0x24 | MEDIA_STATUS | `operationId u32` | `operationId u32, kind u8, state u8, error u8, catalogId u64, mediaId u64, revision u32`（27B） |
+| 0x25 | MEDIA_CAPS | 无 | `schemaVersion u8=1, catalogId u64, features u32`（13B） |
+| 0x26 | MEDIA_DESCRIPTOR | `operationId u32` | `operationId u32, revision u32, size u64, nameLength u16, pathLength u16, name UTF-8, path UTF-8` |
+
+所有多字节字段均 LE。operationId 由共享能力生成，不等于 EDU seq，仅当前 CTRL
+owner 可查询/停止。MEDIA_STATUS 的 kind 为 1 照片、2 视频；state 为 1 STARTING、
+2 RECORDING、3 STOPPING、4 PUBLISHED、5 SAVED_UNPUBLISHED、6 FAILED、7 UNKNOWN。
+PUBLISHED 必须 error=0，且 catalogId/mediaId/revision 均非零；其他状态不提供可导出
+身份。UNKNOWN 表示完成结果未知，不能据此认定未保存或资源已释放。迟到的真实发布
+仍可被查询；设备不自动重拍。后端失联且未证明停止时继续阻止冲突启动。
+
+MEDIA_DESCRIPTOR 只接受本 owner 已 PUBLISHED 的操作，重新确认 catalog 后查实际
+元数据。SDK 的存储拍摄等待方法在 PUBLISHED 后取得描述才返回；描述失败单独报错，
+不重拍。描述中的 revision 可能因缩略图更新而晚于发布通知。
+MEDIA_CAPS 的 features 继承 ISP bit0..6；bit7 表示精确操作发布结果及结果查询，
+bit8 表示独立已索引 HTTP 目录。旧 ISP 缺相关位时明确不支持，不能根据 WiFi v3 推断。
+当前通过 MEDIA_STATUS 查询状态，旧 IMG_STATE 继续只服务教学小图。
+
+WIFI_EXECUTE 操作及参数：
+
+| operation | 含义 | operationArgs |
+|---|---|---|
+| 2 | CAPS | 无 |
+| 3 | SCAN | `offset u32`，首请求 0 |
+| 7 | CONNECT | `security u8, ssidLength u8, passwordLength u8, ssid, password` |
+| 8 | START_MEDIA | 无 |
+| 9 | STATUS | 无 |
+| 10 | DISCONNECT | 无 |
+
+SSID 为 1..32 个 UTF-8 字节，密码最多64字节，均不含 NUL；不记录原始配网帧。
+security：0 不支持、1 OPEN、2 WEP、3 WEP_SHARED、4 WPA、5 WPA2、6 WPA3。
+CAPS 返回真实支持的位图；OPEN 无密码，WEP/WEP_SHARED 长度为5/10/13/26，WPA
+类由后端继续校验。kind 与 outcome：
+
+| kind | outcome |
+|---|---|
+| 0 CAPS | `version u32, securityMask u8`（bitN 对应 security=N） |
+| 1 SCAN | `complete u8, nextOffset u32, hasMore u8, count u8`；接 count 项，每项 `ssidLength u8, ssid, channel u32, rssi i32, security u8`，count≤5 |
+| 2 STATUS | `stage u8, failure u8, catalogId u64, port u16, ipv4[16], ssidLength u8, ssid, security u8`；ipv4 为 NUL 填充数值 IPv4 |
+| 3 DONE | 无；CONNECT/START_MEDIA/DISCONNECT 的受理结果 |
+| 4 ERROR | `error u8` |
+
+CONNECT/START_MEDIA 的 DONE 不是入网/服务就绪。继续 STATUS，stage 为0 IDLE、1
+SCANNING、2 CONNECTING、3 DHCP、5 CONNECTED、6 SERVING、7 STOPPING、8 FAILED。
+仅 SERVING 且实际 IPv4、port、非零 catalogId 齐备时开始 HTTP。STOPPING 保留 owner，
+直到真实停止确认。外层 OK 仅表示 WiFi 结果已映射，kind4 或 stage8 仍为业务失败。
+WiFi error：1 unsupported、2 invalid、3 busy、4 scan、5 auth、6 connection、7 DHCP、
+8 storage、10 not-found、11 stale、12 HTTP、13 timeout、14 cancelled、15 protected。
+
+### 3.2 HTTP 与媒体身份
+
+`GET /media/catalog` 返回真实 DB 已索引目录（`catalogId`、`image`、`video`、`gsensor`
+等）；主条目含 `id`、`metadataRevision`、`name`、`path`、整数 `size`。该入口不因未索引
+文件降级；不支持/DB失败明确报错。原公版 `GET /` 保持原行为。
+
+SDK 只接受照片/视频的真实 ID。gyro 按 `parentMediaId` 与 `metadataRevision` 关联；
+`motionRequired=true` 而 gyro 未登记或缺失时保留 MP4 并报告不完整。下载使用经验证的
+`/customer/bt_res/{image,video,gsensor}/文件名` 描述，整文件 GET 200，无 Range 续传或
+内容哈希保证。长度匹配后原子提交本地文件；默认不覆盖、不删除设备原件。每文件最多
+3次整文件尝试，批量固定选择并逐项返回；CTRL失效或取消终止整个会话。
+
+`DELETE /media?id=<真实ID>` 是独立显式动作，包含后端登记的关联文件。200 为成功、
+404 为已不存在、其他错误如实报告，部分删除不保证事务原子性。SDK 不开放路径删除，
+也不允许使用音频或无 ID 文件。LAN 继承公版可读可删边界，不增加 PC 令牌。
+
+media_import 上下文在交互空档约30秒请求目录保活；状态轮询不续 HTTP 活动。关闭上下文
+或 CTRL 丢失后清理所属 HTTP/STA，停止未确认前保留 hold，新连接不继承旧意图。
 
 ## 4. 事件（EVT）
 
