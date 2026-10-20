@@ -47,13 +47,15 @@ import json
 import logging
 import shlex
 import sys
+import time
 from pathlib import Path
 
 from edu_host import protocol
 from edu_host import EduSession, EduClientError, EduStatusError, EduTimeoutError
 from edu_host import WifiSecurity
+from edu_host.capture import CaptureError, CaptureState, CaptureTimeoutError
 from edu_host.ota_client import OTAError
-from edu_host.protocol import (CompletedImage, DeviceInfo, EduEvent, LedColor,
+from edu_host.protocol import (ButtonEvent, ButtonId, KeyAction, CompletedImage, DeviceInfo, EduEvent, LedColor,
                                LedId, LedMode, LedSpeed, SensorData, Status, Tone)
 from edu_host.transport import list_serial_ports
 
@@ -63,7 +65,7 @@ Commands:
   sensors                  query sensors (ALS raw, battery temp, btcore temp)
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
   photo-save               capture a stored photo; returns public control status
-  video start|stop|status   control stored video (stop waits for publication)
+  video start|stop|status   control stored video (stop waits for public DONE)
   wifi caps|scan|status|disconnect
   wifi connect <wifi.json>  connect using local ssid/security/password JSON
   media caps               query actual public ISP catalog capabilities
@@ -82,6 +84,8 @@ Commands:
   help                     show this help
   quit / exit              leave the demo
 Asynchronous device events (buttons, knob, audio/img state) print live.
+Right CAPTURE key: single = photo-save; hold = video start; press while recording = stop.
+Capture LEDs follow the firmware's shared photo/video lifecycle. Triple-then-hold stays pairing.
 """
 
 
@@ -98,6 +102,72 @@ def split_command(line: str):
 
 def print_event(event: EduEvent) -> None:
     print("\r[event] %s" % event)
+
+
+class CaptureButtons:
+    """Queue demo commands; the firmware retains capture and LED ownership."""
+
+    def __init__(self, session: EduSession) -> None:
+        self.session = session
+        self.enabled = all(session.supports(name) for name in ('INPUT_EVENTS', 'MEDIA_CATALOG', 'SAVED_PHOTO', 'VIDEO'))
+        self.pending = None
+        self.video_operation = None
+        self.busy = False
+        self.starting_video = False
+        self._consumed = False
+        self._pairing_until = 0.0
+        self._next_status = 0.0
+
+    def on_event(self, event: EduEvent) -> None:
+        if not self.enabled or not isinstance(event, ButtonEvent):
+            return
+        if event.btn != ButtonId.CAPTURE:
+            self._pairing_until = 0.0
+            return
+        if event.action == KeyAction.TRIPLE:
+            # Match the released firmware's ten-second pre-pairing window.
+            self._pairing_until = time.monotonic() + 10.0
+            self.pending = None
+            self._consumed = True
+            return
+        if time.monotonic() < self._pairing_until:
+            return
+        if event.action == KeyAction.PRESS:
+            self._consumed = self.busy or self.pending is not None
+            if self.video_operation is not None or self.starting_video:
+                self._consumed = True
+                if not self.busy or self.starting_video:
+                    self.pending = 'video stop'
+            return
+        if self.busy or self._consumed or self.pending is not None:
+            return
+        if event.action == KeyAction.SINGLE:
+            self.pending = 'video stop' if self.video_operation is not None else 'photo-save'
+        elif event.action == KeyAction.LONG:
+            self.pending = 'video stop' if self.video_operation is not None else 'video start'
+        else:
+            return
+        self._consumed = True
+
+    def observe(self, result) -> None:
+        if result.kind != 2:
+            return
+        self.video_operation = (None if result.state in (CaptureState.DONE, CaptureState.FAILED)
+                                else result.operation_id)
+        self._next_status = time.monotonic() + 1.0
+
+    def poll(self) -> None:
+        if self.video_operation is None or time.monotonic() < self._next_status:
+            return
+        self._next_status = time.monotonic() + 1.0
+        try:
+            result = self.session.video_status(self.video_operation)
+        except (EduClientError, ValueError, OSError) as exc:
+            print('[buttons] video status unavailable: %s' % exc)
+            return
+        self.observe(result)
+        if self.video_operation is None:
+            print('[buttons] video finished: %s' % result)
 
 
 def print_image(path: Path, image: CompletedImage) -> None:
@@ -272,9 +342,14 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
     print("connected! proto v%d, firmware %s, caps: %s"
           % (ack.proto_ver, ack.fw_version_str, ", ".join(ack.cap_names)))
     print(HELP_TEXT)
+    buttons = CaptureButtons(session)
+    session.add_event_listener(buttons.on_event)
+    if not buttons.enabled:
+        print('[buttons] capture mapping unavailable; requires INPUT_EVENTS/MEDIA_CATALOG/SAVED_PHOTO/VIDEO')
 
     lines = queue.Queue()
     media_context = None
+    wait_until = 0.0
 
     def read_stdin():
         try:
@@ -288,10 +363,17 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
     try:
         while True:
             session.poll(0.05)
-            try:
-                line = lines.get_nowait()
-            except queue.Empty:
+            buttons.poll()
+            if buttons.pending is not None:
+                line, buttons.pending = buttons.pending, None
+                print('[buttons] %s' % line)
+            elif time.monotonic() < wait_until:
                 continue
+            else:
+                try:
+                    line = lines.get_nowait()
+                except queue.Empty:
+                    continue
             if line is None:
                 break
             line = line.strip()
@@ -300,6 +382,7 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
             try:
                 args = split_command(line)
                 cmd = args[0].lower()
+                buttons.busy = True
                 if cmd in ("quit", "exit", "q"):
                     break
                 elif cmd == "help":
@@ -311,7 +394,10 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
                 elif cmd == 'photo-save':
                     print(session.capture_saved_photo())
                 elif cmd == 'video' and len(args) == 2 and args[1] in ('start', 'stop', 'status'):
-                    print(getattr(session, 'video_' + args[1])())
+                    buttons.starting_video = args[1] == 'start'
+                    result = getattr(session, 'video_' + args[1])()
+                    buttons.observe(result)
+                    print(result)
                 elif cmd == 'wifi' and len(args) >= 2:
                     if args[1] == 'connect' and len(args) == 3:
                         print(session.wifi_connect(*wifi_credentials(args[2])))
@@ -377,15 +463,25 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
                     except ValueError:
                         print("usage: wait <seconds>")
                         seconds = 0.0
-                    session.wait(min(max(seconds, 0.0), 3600.0))
+                    wait_until = time.monotonic() + session._duration(min(max(seconds, 0.0), 3600.0))
                 else:
                     print("unknown command: %r (try 'help')" % line)
+            except CaptureTimeoutError as exc:
+                if buttons.starting_video:
+                    buttons.video_operation = exc.operation_id
+                print('timeout: %s' % exc)
+            except CaptureError as exc:
+                buttons.observe(exc.result)
+                print('error: %s' % exc)
             except EduTimeoutError as exc:
                 print("timeout: %s" % exc)
             except OTAError as exc:
                 print("ota error: %s" % exc)
             except (EduClientError, ValueError, OSError) as exc:
                 print("error: %s" % exc)
+            finally:
+                buttons.busy = False
+                buttons.starting_video = False
             print("edu> ", end="", flush=True)
     except KeyboardInterrupt:
         print()
