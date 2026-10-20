@@ -33,3 +33,15 @@
 同实例三轮 JPEG/WAV、新旧 CLI 全流程通过；工作进程意外退出、父进程 EOF、
 无效通道补开均未误断 CTRL。日志和串口已释放；无新增未闭环的 Critical/Major。
 保留跨 macOS 版本、Windows/Linux、冻结程序、旧 SDK 整包 OTA 和断电等实测边界。
+
+
+## 2026-10-20 semi 新对端闭环
+
+- 审查目标：共用能力固件 semi 实机连接与 EDU 兼容；修复前 Head f705838。
+- 最近验证：58 项已有测试；正式 SDK 恢复 8/8、owner/控制/重启探针、新旧 CLI 联调。设备 84:9D:4B:5A:67:29，USB 串口 312400。
+
+| ID | 严重级别 | 状态 | 代码位置 | 问题描述 | 影响 | 修复建议 | 验证方式 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| R009 | Major | Fixed | [mac_bt.py:308](/Volumes/SanDisk-CaseSensitive/code/sdk/edu-glasses-host/edu_host/mac_bt.py:308) | 新对端在 worker 中直接 open RFCOMM，未得到完成回调 | HELLO 前即失败，全部业务不可用 | worker 自己查询 SDP 后再 open，复用现有 helper | 原版两次失败；native/隔离探针对照；正式 SDK 8/8 恢复、能力/owner/重启及新旧 CLI 通过；已有 58/58 测试 | 不改固件或线协议，详见 MAC 回归文档的 2026-10-20 补充 |
+
+保留此前 R001–R008 的审查记录。新增问题在本轮首次配对此 semi 时发现，是 R008 进程隔离路径缺少本进程 SDP 初始化的实机补充，不重新开启已经闭环的其他问题。

@@ -157,3 +157,14 @@ sensors、JPEG、OPUS→WAV、LED 与提示音，`NEW_AND_LEGACY_DEMO_PASS`。
 全部本轮通道工作进程退出，日志已停止，lsof 确认 LTFTDI07 无占用。设备保留
 eca5981f EDU 固件。输出文件位于忽略目录 `fixed/`，最终媒体检查为
 `final-media-validation.json`。本轮没有发布、推送或合并两个本地分支。
+
+
+## 2026-10-20 semi 新对端回归补充
+
+固件采用共用能力入口的 `1f25d014`，用户选择的目标为 `/dev/cu.usbserial-312400` semi，串口确认蓝牙地址 `84:9D:4B:5A:67:29`。不是本报告前文的开发板。
+
+本次原版 SDK 两次在 worker 内等待 RFCOMM open-complete 超时（status=None），主进程已能查询全部 SDP。native 单进程先查询 SDP 后 HELLO/INFO 成功；隔离探针只补 worker 的 SDP 查询便收到有效 JPEG。最小修复在 `_channel_worker` 内复用 `sdp_channels`，每个 worker 在自己的主线程查询 SDP 后再 open；仍是一通道一进程，公开 API、关闭策略和 EDU v1 不变。
+
+修复后的正式 SDK：恢复检查 8/8；五次传感器查询、LED/tone、旧录音 owner 断连停止、新连接未 start 前不出音频、HELLO 前 INFO、重启后拍照录音全部通过。已有 58 项测试通过，未新增单元测试。原样 `e7142c6` 旧 SDK 与当前 SDK 各自完整 CLI 联调也通过，正常 WAV 为 16 kHz 单声道，JPEG 720×960。
+
+完整架构对账与证据目录见 [固件 semi 实机报告](../../Looktech-Glasses-Device/docs/test/edu-shared-capabilities-semi-20261020.md)。尚未覆盖 Windows/Linux、第二主机、真实 CALL、物理充电/输入及完整 OTA 升级；本次没有更新发布包或替换 SDK 内附旧固件。

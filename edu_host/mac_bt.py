@@ -309,8 +309,11 @@ def _channel_worker(fd: int, address: str, channel_id: int, timeout: float) -> N
     """Private pipe endpoint; each native channel stays on its main thread."""
     from multiprocessing.connection import Connection
     conn = Connection(fd)
-    channel = _NativeRFCOMMChannel(find_device(address), channel_id)
+    dev = find_device(address)
+    channel = _NativeRFCOMMChannel(dev, channel_id)
     try:
+        # IOBluetooth needs a process-local SDP query before opening a new peer.
+        sdp_channels(dev, [UUID_CTRL, UUID_AUDIO, UUID_IMG, UUID_OTA])
         channel.open(timeout=timeout)
         conn.send(("open", None))
         run_loop = NSRunLoop.currentRunLoop()
