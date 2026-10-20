@@ -71,6 +71,7 @@ class CommandId(IntEnum):
     MEDIA_STATUS = 0x24
     MEDIA_CAPS = 0x25
     MEDIA_DESCRIPTOR = 0x26
+    MEDIA_IDS = 0x27
 
 
 class Status(IntEnum):
@@ -163,6 +164,7 @@ CAP_CONTROL = 1 << 4
 CAP_WIFI = 1 << 5
 CAP_SAVED_PHOTO = 1 << 6
 CAP_VIDEO = 1 << 7
+CAP_MEDIA_CATALOG = 1 << 8
 
 CAP_NAMES = {
     CAP_AUDIO_STREAM: "AUDIO_STREAM",
@@ -173,6 +175,7 @@ CAP_NAMES = {
     CAP_WIFI: "WIFI",
     CAP_SAVED_PHOTO: "SAVED_PHOTO",
     CAP_VIDEO: "VIDEO",
+    CAP_MEDIA_CATALOG: "MEDIA_CATALOG",
 }
 
 

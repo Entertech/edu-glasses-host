@@ -21,7 +21,7 @@ from .wifi import (WifiCapabilities, WifiError, WifiNetwork, WifiSecurity,
                    WifiStage, WifiStatus)
 from .media import (DeleteResult, DownloadResult, MediaCancelled, MediaError,
                     MediaFile, MediaImport, MediaItem, MediaSessionError)
-from .capture import (CaptureDescriptionError, CaptureError, CaptureResult, CaptureState,
+from .capture import (CaptureError, CaptureResult, CaptureState,
                       CaptureTimeoutError, MediaCapabilities)
 from .bt_discovery import AmbiguousGlassesError
 from .ota_client import OTAError, OTAStatusError, OTATimeoutError, UpdateResultResponse
@@ -46,7 +46,7 @@ __all__ = [
     "WifiCapabilities", "WifiError", "WifiNetwork", "WifiSecurity", "WifiStage", "WifiStatus",
     "DeleteResult", "DownloadResult", "MediaCancelled", "MediaError", "MediaFile",
     "MediaImport", "MediaItem", "MediaSessionError",
-    "CaptureDescriptionError", "CaptureError", "CaptureResult", "CaptureState", "CaptureTimeoutError", "MediaCapabilities",
+    "CaptureError", "CaptureResult", "CaptureState", "CaptureTimeoutError", "MediaCapabilities",
     "AmbiguousGlassesError",
     "OTAError", "OTAStatusError", "OTATimeoutError",
     "UpdateResultResponse", "CompletedImage", "EduEvent",

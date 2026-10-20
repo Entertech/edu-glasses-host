@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import wraps
 import http.client
 import ipaddress
 import json
@@ -54,6 +55,7 @@ class MediaItem:
     file: MediaFile
     companions: Tuple[MediaFile, ...] = ()
     motion_required: bool = False
+    companions_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -139,6 +141,17 @@ def parse_catalog(data: bytes, catalog_id: int) -> Tuple[MediaItem, ...]:
         raise MediaSessionError("malformed indexed media catalog") from exc
 
 
+def _media_operation(method):
+    @wraps(method)
+    def execute(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except MediaSessionError:
+            self._close_after_error()
+            raise
+    return execute
+
+
 class MediaImport:
     """One sequential LAN context. Progress callbacks run on the SDK caller's thread."""
 
@@ -178,10 +191,7 @@ class MediaImport:
         self._owner = self.session._client
         self.session._media_import = self
         try:
-            from .capture import INDEXED_HTTP
-            from .session import EduUnsupportedError
-            if not self.session.media_capabilities().features & INDEXED_HTTP:
-                raise EduUnsupportedError('ISP needs the explicit indexed media HTTP catalog')
+            self.session.media_capabilities()
             wifi = WifiClient(self.session)
             wifi.connect(self._ssid, self._password, self._security)
             status = wifi.start_media()
@@ -242,8 +252,7 @@ class MediaImport:
                 continue
             try:
                 self._check_owner()
-                data = self._http('GET', '/media/catalog')
-                parse_catalog(data, self._endpoint[2])
+                self._public_catalog()
             except Exception as exc:
                 self._heartbeat_error = exc
                 return
@@ -262,8 +271,6 @@ class MediaImport:
             response = connection.getresponse()
             if allow_absent and response.status == 404:
                 return False
-            if response.status == 404 and path == '/media/catalog':
-                raise MediaSessionError("ISP does not support the indexed catalog endpoint")
             if response.status != 200:
                 raise MediaError("HTTP %s failed with status %d" % (method, response.status))
             if consume is not None:
@@ -298,6 +305,8 @@ class MediaImport:
             raise
         except MediaError:
             raise
+        except (OSError, http.client.HTTPException) as exc:
+            raise MediaError('HTTP transport failed: %s' % exc) from exc
         except BaseException:
             self.cancel()
             self._close_after_error()
@@ -312,28 +321,70 @@ class MediaImport:
             if callback is not None:
                 callback(*value)
 
-    def list(self) -> Tuple[MediaItem, ...]:
-        def fetch():
-            items = parse_catalog(self._http('GET', '/media/catalog'), self._endpoint[2])
-            self._known_items.update((item.media_id, item) for item in items)
+    def _public_catalog(self):
+        try:
+            document = json.loads(self._http('GET', '/'))
+            if not isinstance(document, dict):
+                raise ValueError('catalog must be an object')
+            if document.get('catalogId') is not None and document['catalogId'] != self._endpoint[2]:
+                raise MediaSessionError("media catalog identity changed")
+            return document
+        except (ValueError, TypeError) as exc:
+            raise MediaSessionError("invalid public HTTP catalog") from exc
+
+    def _companions(self, items):
+        try:
+            document = self._run(self._public_catalog)
+        except MediaSessionError:
+            raise
+        except MediaError:
             return items
-        return self._run(fetch)
+        # Public legacy lists carry no registered associations; never guess by filename.
+        if document.get('catalogId') is None:
+            return items
+        indexed = {item.media_id: item for item in parse_catalog(json.dumps(document).encode(), self._endpoint[2])}
+        result = []
+        for item in items:
+            companion_source = indexed.get(item.media_id)
+            if companion_source and self._identity(companion_source) == self._identity(item):
+                item = replace(item, companions=companion_source.companions,
+                               motion_required=companion_source.motion_required, companions_known=True)
+            result.append(item)
+        return tuple(result)
+
+    @staticmethod
+    def _identity(item):
+        return item.catalog_id, item.media_id, item.revision, item.kind, item.file
+
+    @_media_operation
+    def list(self) -> Tuple[MediaItem, ...]:
+        from .catalog import CatalogClient
+        self._check_owner()
+        items = self._companions(CatalogClient(self.session).list(self._endpoint[2]))
+        self._known_items.update((item.media_id, item) for item in items)
+        return items
 
     def _resolve(self, media) -> MediaItem:
+        from .catalog import CatalogClient
+        self._check_owner()
         if isinstance(media, int) and not isinstance(media, bool):
             media_id = media
-        else:
+        elif isinstance(media, MediaItem):
             if media.catalog_id != self._endpoint[2]:
                 raise MediaSessionError("selected media belongs to another catalog")
             media_id = media.media_id
-        for item in parse_catalog(self._http('GET', '/media/catalog'), self._endpoint[2]):
-            if item.media_id == media_id:
-                if isinstance(media, MediaItem) and item != media:
-                    raise MediaError("selected media descriptor changed; list again")
-                return item
-        raise MediaError("selected media ID is no longer available")
+        else:
+            raise ValueError('select a media ID or MediaItem')
+        item = CatalogClient(self.session).item(self._endpoint[2], media_id)
+        selected = media if isinstance(media, MediaItem) else self._known_items.get(media_id)
+        if selected is not None and self._identity(item) != self._identity(selected):
+            raise MediaError("selected media descriptor changed; list again")
+        if selected is not None:
+            return replace(item, companions=selected.companions, motion_required=selected.motion_required,
+                           companions_known=selected.companions_known)
+        return self._companions((item,))[0]
 
-    def _download_file(self, item: MediaItem, file: MediaFile, directory: Path) -> Path:
+    def _download_file(self, item: MediaItem, file: MediaFile, directory: Path, progress=None) -> Path:
         target = directory / file.name
         if target.resolve().parent != directory or target.exists():
             raise MediaError("output already exists or is outside the destination: %s" % file.name)
@@ -362,7 +413,7 @@ class MediaImport:
                             raise MediaError("incomplete media body")
                         output.flush()
                         os.fsync(output.fileno())
-                    self._http('GET', file.path, consume)
+                    self._run(lambda: self._http('GET', file.path, consume), progress)
                 self._check_owner()
                 current = self._resolve(item)
                 if current != item:
@@ -378,31 +429,33 @@ class MediaImport:
                 os.unlink(temporary)
         raise MediaError("download retries exhausted")
 
+    @_media_operation
     def download(self, media, directory: Union[str, Path] = 'captures',
                  progress: Optional[Callable[[int, str, int, int], None]] = None) -> DownloadResult:
         destination = Path(directory).resolve()
         destination.mkdir(parents=True, exist_ok=True)
-        def transfer():
-            item = self._resolve(media)
-            files, errors = [], []
+        item = self._resolve(media)
+        files, errors = [], []
+        try:
+            files.append(self._download_file(item, item.file, destination, progress))
+        except MediaSessionError:
+            raise
+        except MediaError as exc:
+            return DownloadResult(item, (), (str(exc),))
+        for companion in item.companions:
             try:
-                files.append(self._download_file(item, item.file, destination))
+                files.append(self._download_file(item, companion, destination, progress))
             except MediaSessionError:
                 raise
             except MediaError as exc:
-                return DownloadResult(item, (), (str(exc),))
-            for companion in item.companions:
-                try:
-                    files.append(self._download_file(item, companion, destination))
-                except MediaSessionError:
-                    raise
-                except MediaError as exc:
-                    errors.append(str(exc))
-            if item.motion_required and not item.companions:
-                errors.append('registered motion data is missing')
-            return DownloadResult(item, tuple(files), tuple(errors))
-        return self._run(transfer, progress)
+                errors.append(str(exc))
+        if not item.companions_known:
+            errors.append('public catalog cannot confirm registered motion companions; main file retained')
+        elif item.motion_required and not item.companions:
+            errors.append('registered motion data is missing')
+        return DownloadResult(item, tuple(files), tuple(errors))
 
+    @_media_operation
     def download_all(self, directory: Union[str, Path] = 'captures', progress=None) -> Tuple[DownloadResult, ...]:
         selected = self.list()
         results = []
@@ -415,23 +468,21 @@ class MediaImport:
                 results.append(DownloadResult(item, (), (str(exc),)))
         return tuple(results)
 
+    @_media_operation
     def delete(self, media) -> DeleteResult:
-        def remove():
-            if isinstance(media, int) and not isinstance(media, bool):
-                media_id = _integer(media, 'media ID', minimum=1)
-            else:
-                if media.catalog_id != self._endpoint[2]:
-                    raise MediaSessionError("selected media belongs to another catalog")
-                media_id = _integer(media.media_id, 'media ID', minimum=1)
-            items = parse_catalog(self._http('GET', '/media/catalog'), self._endpoint[2])
-            selected = next((item for item in items if item.media_id == media_id), None)
-            if selected is None:
-                if media_id not in self._known_items:
-                    raise MediaError('media ID is not an indexed photo or video in this catalog')
-            else:
-                if isinstance(media, MediaItem) and selected != media:
-                    raise MediaError('selected media descriptor changed; list again')
-                self._known_items[media_id] = selected
-            deleted = self._http('DELETE', '/media?id=%d' % media_id, allow_absent=True) is not False
-            return DeleteResult(media_id, deleted, not deleted)
-        return self._run(remove)
+        self._check_owner()
+        try:
+            selected = self._resolve(media)
+        except MediaError as exc:
+            if isinstance(exc, MediaSessionError):
+                raise
+            from .client import EduStatusError
+            media_id = media.media_id if isinstance(media, MediaItem) else media
+            if (media_id not in self._known_items or not isinstance(exc.__cause__, EduStatusError)
+                    or exc.__cause__.data not in (b'\x62', b'\x63', b'\x64')):
+                raise
+        else:
+            media_id = selected.media_id
+            self._known_items[media_id] = selected
+        deleted = self._run(lambda: self._http('DELETE', '/media?id=%d' % media_id, allow_absent=True)) is not False
+        return DeleteResult(media_id, deleted, not deleted)

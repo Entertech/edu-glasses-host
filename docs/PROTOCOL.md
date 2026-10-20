@@ -90,9 +90,10 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 
 ### 3.1 存储拍摄与 LAN 导出扩展
 
-此扩展保留 v1、11B HELLO_ACK、990B 帧和旧命令。caps 新增 bit5 WIFI、bit6
-SAVED_PHOTO、bit7 VIDEO；这些位表示 BT 入口存在，使用前仍查询真实 ISP 能力。
-原 TAKE_PHOTO 返回教学小图，AUDIO_START/STOP 仍为音频推流。
+保留 v1、11B HELLO_ACK、990B 帧和旧命令。HELLO caps 新增 bit5 WIFI、bit6
+SAVED_PHOTO、bit7 VIDEO、bit8 MEDIA_CATALOG。bit8 标识本节的公版 ISP 桥接合同，
+新 SDK 在使用下列拍摄/媒体命令前要求它；不与此前未发布的精确发布原型混用。
+原 TAKE_PHOTO 为教学小图，AUDIO_START/STOP 为音频推流。ISP 固件、索引及路由不变。
 
 | cmd_id | 命令 | args | RSP data（外层 status=OK） |
 |---|---|---|---|
@@ -100,23 +101,24 @@ SAVED_PHOTO、bit7 VIDEO；这些位表示 BT 入口存在，使用前仍查询�
 | 0x21 | SAVED_PHOTO | 无 | `operationId u32`，仅表示受理 |
 | 0x22 | VIDEO_START | 无 | `operationId u32`，仅表示受理 |
 | 0x23 | VIDEO_STOP | `operationId u32` | `operationId u32`，仅表示停止受理 |
-| 0x24 | MEDIA_STATUS | `operationId u32` | `operationId u32, kind u8, state u8, error u8, catalogId u64, mediaId u64, revision u32`（27B） |
+| 0x24 | MEDIA_STATUS | `operationId u32` | `operationId u32, kind u8, state u8, error u8`（7B） |
 | 0x25 | MEDIA_CAPS | 无 | `schemaVersion u8=1, catalogId u64, features u32`（13B） |
-| 0x26 | MEDIA_DESCRIPTOR | `operationId u32` | `operationId u32, revision u32, size u64, nameLength u16, pathLength u16, name UTF-8, path UTF-8` |
+| 0x26 | MEDIA_DESCRIPTOR | `catalogId u64, mediaId u64` | `catalogId u64, mediaId u64, revision u32, kind u8, size u64, nameLength u16, pathLength u16, name UTF-8, path UTF-8`（33B+字符串） |
+| 0x27 | MEDIA_IDS | `catalogId u64, cursor u64` | `catalogId u64, catalogRevision u64, nextCursor u64, hasMore u8, count u8, ids u64[count]`（26B+8N，N≤16） |
 
-所有多字节字段均 LE。operationId 由共享能力生成，不等于 EDU seq，仅当前 CTRL
-owner 可查询/停止。MEDIA_STATUS 的 kind 为 1 照片、2 视频；state 为 1 STARTING、
-2 RECORDING、3 STOPPING、4 PUBLISHED、5 SAVED_UNPUBLISHED、6 FAILED、7 UNKNOWN。
-PUBLISHED 必须 error=0，且 catalogId/mediaId/revision 均非零；其他状态不提供可导出
-身份。UNKNOWN 表示完成结果未知，不能据此认定未保存或资源已释放。迟到的真实发布
-仍可被查询；设备不自动重拍。后端失联且未证明停止时继续阻止冲突启动。
+多字节字段均 LE。operationId 由共享能力生成，只作 BT 本地控制与 owner 关联，
+不发送给 ISP，也不是媒体 ID。仅当前 CTRL owner 可查询/停止其操作；每种媒体保存最近
+一个操作状态。MEDIA_STATUS kind 为1照片、2视频；state 为1 STARTING、2 RECORDING、
+3 STOPPING、4 DONE、6 FAILED、7 UNKNOWN。DONE/RECORDING 是公版 ISP 控制状态，
+**不保证文件发布或首帧写入，也不返回本次唯一媒体 ID**。UNKNOWN/超时不能推断未保存
+或资源已释放，不自动重拍。后续通过独立 ID 列表选择媒体，不猜最近文件。
 
-MEDIA_DESCRIPTOR 只接受本 owner 已 PUBLISHED 的操作，重新确认 catalog 后查实际
-元数据。SDK 的存储拍摄等待方法在 PUBLISHED 后取得描述才返回；描述失败单独报错，
-不重拍。描述中的 revision 可能因缩略图更新而晚于发布通知。
-MEDIA_CAPS 的 features 继承 ISP bit0..6；bit7 表示精确操作发布结果及结果查询，
-bit8 表示独立已索引 HTTP 目录。旧 ISP 缺相关位时明确不支持，不能根据 WiFi v3 推断。
-当前通过 MEDIA_STATUS 查询状态，旧 IMG_STATE 继续只服务教学小图。
+MEDIA_CAPS 继承真实 ISP schema/catalog/features，使用公版 bit0 BATCH_METADATA、
+bit4 DB_CATALOG；不要求 ISP bit7/8，不依赖新增 UART 0x2B。ID 分页复用公版0x21，
+mask=3、includeDeleted=0，只列照片/视频。描述复用公版0x22的BASE字段，kind 1/2、
+revision非零、真实名称/路径/大小。桥接在每个查询前核对实际 CAPS/catalog，保留底层
+请求关联、分片、超时和 owner 取消。后端错误为外层ERROR＋1B公版错误码（如0x62不存在、
+0x68目录/游标失效），不能把查询失败伪装空列表。页游标是公版offset；列表不承诺原子快照。
 
 WIFI_EXECUTE 操作及参数：
 
@@ -151,22 +153,25 @@ WiFi error：1 unsupported、2 invalid、3 busy、4 scan、5 auth、6 connection
 
 ### 3.2 HTTP 与媒体身份
 
-`GET /media/catalog` 返回真实 DB 已索引目录（`catalogId`、`image`、`video`、`gsensor`
-等）；主条目含 `id`、`metadataRevision`、`name`、`path`、整数 `size`。该入口不因未索引
-文件降级；不支持/DB失败明确报错。原公版 `GET /` 保持原行为。
+SDK 主媒体身份只来自SPP的真实ID/BASE查询。公版 HTTP `GET /` 可能因无ID文件退回
+legacy目录，不影响SPP索引查询；不新增 `/media/catalog` 路由，不允许路径身份回退。
+SDK 开启LAN后固定实际endpoint/catalog，只接受照片/视频ID，下载前后重核描述。
 
-SDK 只接受照片/视频的真实 ID。gyro 按 `parentMediaId` 与 `metadataRevision` 关联；
-`motionRequired=true` 而 gyro 未登记或缺失时保留 MP4 并报告不完整。下载使用经验证的
-`/customer/bt_res/{image,video,gsensor}/文件名` 描述，整文件 GET 200，无 Range 续传或
-内容哈希保证。长度匹配后原子提交本地文件；默认不覆盖、不删除设备原件。每文件最多
-3次整文件尝试，批量固定选择并逐项返回；CTRL失效或取消终止整个会话。
+公版BASE没有gyro关系。若 `GET /` 返回已索引JSON，SDK仅在catalog、主ID、revision和
+文件描述一致时按 `parentMediaId`/`metadataRevision` 采用已登记伴随文件；若为legacy，
+视频 `companions_known=False`，保留可用MP4且 `complete=False`，报告无法确认伴随关系。
+不按同名文件推断。已知 `motionRequired=true` 而gyro缺失/下载失败也报告不完整。
 
-`DELETE /media?id=<真实ID>` 是独立显式动作，包含后端登记的关联文件。200 为成功、
-404 为已不存在、其他错误如实报告，部分删除不保证事务原子性。SDK 不开放路径删除，
-也不允许使用音频或无 ID 文件。LAN 继承公版可读可删边界，不增加 PC 令牌。
+文件使用经验证的 `/customer/bt_res/{image,video,gsensor}/文件名`，直连实际数值IPv4，
+不使用代理/重定向；整文件GET 200，无Range或内容hash保证。状态、Content-Length和实际
+字节数匹配条目大小后提交本地文件；默认不覆盖、不删除设备原件。每文件最多3次整文件
+尝试，批量固定选择并逐项返回，CTRL失效或取消终止所属会话。
 
-media_import 上下文在交互空档约30秒请求目录保活；状态轮询不续 HTTP 活动。关闭上下文
-或 CTRL 丢失后清理所属 HTTP/STA，停止未确认前保留 hold，新连接不继承旧意图。
+`DELETE /media?id=<真实ID>` 独立显式发起，范围沿用公版登记关联文件。200成功、404已不存在、
+其他错误如实报告，不保证事务原子性。SDK不提供路径删除，不操作音频/无ID文件。
+LAN继承公版可读可删边界，不增加PC token。上下文交互空档约30秒GET /保活；关闭或CTRL
+失效清理所属HTTP/STA，停止未确认保留hold。macOS所有SPP调用在调用线程，HTTP工作线程
+运行期间调用线程继续poll；不会从HTTP线程发蓝牙命令。
 
 ## 4. 事件（EVT）
 

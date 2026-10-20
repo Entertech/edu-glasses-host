@@ -144,10 +144,12 @@ OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请�
 
 ## 存储照片、录像与 WiFi 原件导出
 
-这组新接口需要配套的 EDU BT 与 ISP 固件。`media_capabilities()` 查询真实 ISP 的
-发布关联和专用 ID 目录能力；缺能力明确报不支持。SDK 仅导出有真实 ID 的照片、视频及
-登记的伴随文件，混有未索引文件不会使正常条目消失。原 `photo()` 和 `record()` 继续
-分别返回教学小图和麦克风音频。
+这组接口需要支持 MEDIA_CATALOG 的 EDU BT，复用公版 ISP 的 ID/元数据及 LAN 能力，
+无需修改或烧录 ISP。`media_capabilities()` 查询真实能力；只导出有真实 ID 的照片、视频
+及可确认登记的伴随文件。原 `photo()`/`record()` 仍为教学小图/麦克风音频。
+
+拍摄调用返回公版控制状态，不承诺本次唯一媒体 ID 或文件已发布。随后从媒体列表选择
+真实条目；暂未列出时可重新查询，SDK 不猜最近文件、不自动重拍。
 
 ```python
 import json
@@ -157,25 +159,25 @@ from edu_host import EduSession, WifiSecurity
 # 本地凭据文件由使用者提供；不要提交到仓库。
 credentials = json.loads(Path('wifi.json').read_text(encoding='utf-8'))
 with EduSession(bt='auto') as glasses:
-    photo = glasses.capture_saved_photo()  # 等待本次发布，含 catalog_id/media_id/revision/file
-    print(photo.media_id, photo.file)
-    glasses.video_start()                 # 等待实际 RECORDING
+    photo = glasses.capture_saved_photo()  # 公版 DONE 控制状态，不是媒体身份
+    print(photo.operation_id, photo.state)
+    glasses.video_start()                 # 等待公版 RECORDING 状态
     glasses.wait(5)
-    video = glasses.video_stop()          # 等待封口和真实发布，自动限时结束也可查 video_status()
+    video = glasses.video_stop()          # 等待公版 DONE；可用 video_status() 查询
     with glasses.media_import(credentials['ssid'], credentials['password'],
                               WifiSecurity[credentials.get('security', 'WPA2')]) as media:
-        print(media.list())
+        items = media.list()             # 从真实 ID 目录选择
         for result in media.download_all('captures'):
             print(result.media.media_id, result.main_success, result.complete, result.errors)
-        # 单项：media.download(photo.media_id, 'captures')
-        # 显式删除独立调用：media.delete(photo.media_id)
+        # 单项：media.download(items[0], 'captures')
+        # 显式删除独立调用：media.delete(items[0])
 ```
 
 `wifi.json` 内容为 `{"ssid":"目标网络","security":"WPA2","password":"本地密码"}`，
 权限建议仅当前用户可读。CLI 只接受文件路径，避免密码进入命令行和 REPL 输出；SDK
 不保存凭据。PC 与眼镜处于同一可达 LAN 即可，PC 可用有线网络，无需互联网。
 
-CLI 同步等待存储拍摄/封口，无需用固定 wait 猜测发布。下面命令默认保留全部原件：
+CLI 同步等待公版拍摄控制状态，文件是否可导出以真实 ID 列表为准。下面命令默认保留全部原件：
 
 ```bash
 printf 'photo-save\nvideo start\nwait 5\nvideo stop\nmedia open /absolute/path/wifi.json\nmedia list\nmedia download all /absolute/path/captures\nmedia close\nquit\n' | python3 demo_cli.py --bt auto
@@ -185,10 +187,11 @@ printf 'photo-save\nvideo start\nwait 5\nvideo stop\nmedia open /absolute/path/w
 `media download <id> [directory]`、`media delete <id>`、`video status`。
 Notebook 见 [`05_wifi_media_export.ipynb`](examples/notebooks/05_wifi_media_export.ipynb)。
 
-`CaptureError.result` 区分已保存未发布、失败和结果未知；`CaptureTimeoutError.operation_id`
-可用于之后的 `media_status()` 查询，不自动重拍。`CaptureDescriptionError.result` 表示主媒体已发布、但后续描述查询失败，保留准确操作及媒体身份。下载返回逐项结果：主文件成功而 gyro
-缺失/失败仍保留 MP4，`complete=False` 并列出问题。长度校验不代表哈希校验，无 Range
-续传；每文件最多3次从头尝试，普通项失败后批量继续。默认不覆盖已有文件，不自动删源。
+`CaptureError.result` 区分失败和结果未知；`CaptureTimeoutError.operation_id` 可继续用于
+`media_status()`，不自动重拍。下载逐项报告：主文件成功而gyro缺失/失败或公版legacy
+目录无法确认伴随关系时，保留MP4，`main_success=True, complete=False`并列出问题。
+长度校验不代表hash校验，无Range续传；每文件最多3次整文件尝试，普通项失败批量继续。
+默认不覆盖已有文件，不自动删源。未索引文件不会出现在可操作集合中。
 
 media_import 在交互空档保活约30秒，退出释放所属 HTTP/STA。CTRL失效/取消中止整个会话，
 新连接不继承旧录像或导出。LAN 沿用公版可读、可删边界。正常停止等待远端确认；后端

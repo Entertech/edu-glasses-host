@@ -62,11 +62,11 @@ Commands:
   info                     query device info (fw version, battery, charging)
   sensors                  query sensors (ALS raw, battery temp, btcore temp)
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
-  photo-save               capture and publish a full-size photo on the glasses
+  photo-save               capture a stored photo; returns public control status
   video start|stop|status   control stored video (stop waits for publication)
   wifi caps|scan|status|disconnect
   wifi connect <wifi.json>  connect using local ssid/security/password JSON
-  media caps               query actual ISP capture/catalog capabilities
+  media caps               query actual public ISP catalog capabilities
   media open <wifi.json>   connect and open one LAN import context
   media list               list indexed photo/video IDs only
   media download <id|all> [directory]

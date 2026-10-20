@@ -53,7 +53,7 @@ demo 是一个读 stdin 的 REPL，所以**用管道喂命令**即可脚本化�
 printf 'info\nsensors\nquit\n' | python3 demo_cli.py --bt auto
 printf 'photo out.jpg\nwait 25\nquit\n' | python3 demo_cli.py --bt auto
 printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.py --bt auto
-# 新存储拍摄/LAN 需配套 BT/ISP；凭据只从本地文件读取，按真实完成返回。
+# 新存储拍摄/LAN 需新版 BT、公版 ISP；凭据只从本地文件读取，拍摄返回公版控制状态。
 printf 'photo-save\nvideo start\nwait 5\nvideo stop\nmedia open /absolute/path/wifi.json\nmedia list\nmedia download all /absolute/path/captures\nmedia close\nquit\n' | python3 demo_cli.py --bt auto
 ```
 
@@ -119,7 +119,7 @@ python3 -m py_compile demo_cli.py edu_host/*.py
 | `edu_host/bt_socket.py` | Windows/Linux 标准库 RFCOMM socket |
 | `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
 | `edu_host/bt_discovery.py` | Windows/Linux 已配对设备枚举（`--bt auto`） |
-| `edu_host/capture.py` / `wifi.py` / `media.py` | 操作关联发布、类型化配网及有 ID 的 LAN 导出；合同见 `docs/PROTOCOL.md` §3.1–3.2 |
+| `edu_host/capture.py` / `catalog.py` / `wifi.py` / `media.py` | 公版拍摄控制、SPP ID/元数据桥接、类型化配网及 LAN 导出；合同见 `docs/PROTOCOL.md` §3.1–3.2 |
 | `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
 | `demo_cli.py` | 共用 EduSession 的交互/管道 REPL；stdin 在线程读，设备收发由 SDK 处理 |
 | `examples/headset_demo.py` | A2DP/HFP 演示（sounddevice 按设备名收放音） |
