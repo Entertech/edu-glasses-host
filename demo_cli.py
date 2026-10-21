@@ -66,6 +66,8 @@ Commands:
   photo [out.jpg]          take a photo; JPEG is saved when it arrives
   photo-save               capture a stored photo; returns public control status
   video start|stop|status   control stored video (stop waits for public DONE)
+  video config             query saved/requested video config and apply state
+  video config [--resolution 2k|1080p] [--orientation landscape|portrait] [--max-duration 30|60|180]
   wifi caps|scan|status|disconnect
   wifi connect <wifi.json>  connect using local ssid/security/password JSON
   media caps               query actual public ISP catalog capabilities
@@ -168,6 +170,18 @@ class CaptureButtons:
         self.observe(result)
         if self.video_operation is None:
             print('[buttons] video finished: %s' % result)
+
+
+def video_config_args(words):
+    options = {'--resolution': 'resolution', '--orientation': 'orientation', '--max-duration': 'max_duration_s'}
+    if not words or len(words) % 2:
+        raise ValueError('video config: provide option/value pairs')
+    result = {}
+    for option, value in zip(words[::2], words[1::2]):
+        if option not in options or options[option] in result:
+            raise ValueError('unknown or repeated video config option: %s' % option)
+        result[options[option]] = int(value) if option == '--max-duration' else value
+    return result
 
 
 def print_image(path: Path, image: CompletedImage) -> None:
@@ -393,6 +407,9 @@ def run_session(session: EduSession, ota_chunk_size: int = 512,
                     print_sensors(session.sensors())
                 elif cmd == 'photo-save':
                     print(session.capture_saved_photo())
+                elif cmd == 'video' and len(args) >= 2 and args[1] == 'config':
+                    print(session.get_video_config() if len(args) == 2 else
+                          session.set_video_config(**video_config_args(args[2:])))
                 elif cmd == 'video' and len(args) == 2 and args[1] in ('start', 'stop', 'status'):
                     buttons.starting_video = args[1] == 'start'
                     result = getattr(session, 'video_' + args[1])()

@@ -12,7 +12,7 @@ Looktech 眼镜**教育版固件**的上位机演示程序，通过四条经典�
 [Looktech-Glasses-Device / feat/edu-main-integration](https://github.com/Entertech/Looktech-Glasses-Device/tree/feat/edu-main-integration)。
 固件从 main `813ee9999eaefcdb830053d2faec65f0e2bff2c5` 迁入旧 `feat/edu-spp`
 的 EDU v1 能力，保留教学功能、重启、LED、提示音和 OTA；截至 2026-10-20，
-当前功能固件源提交为 `51a1d390`，SDK 功能提交为 `6f147e5`，支持存储拍照、录像及
+当前功能固件源提交为 `9b1439a3`，SDK 当前分支支持存储拍照、录像配置及
 WiFi 原件导出。尚未合入两仓库 main，也未发布正式 SDK/固件。
 
 SDK 新增统一 `EduSession`，CLI 和 Notebook 直接复用它；保留原有客户端与 transport API。
@@ -149,6 +149,16 @@ OTA 前须结束录音并等待拍照完成；升级期间拒绝其他设备请�
 应用退出时使用 `EduSession.close()` 释放完整会话，SDK 会等待并回收各通道进程。
 只有尚无同设备通道打开时，首次打开失败才重建 ACL 重试，避免打断已有连接。
 此实现需要可启动子进程的普通 Python 环境；单文件冻结的可执行程序尚未验证。
+
+## 录像配置
+
+需要 HELLO `VIDEO_CONFIG` 能力。用 `get_video_config()` 查询，
+`set_video_config(resolution="1080p", orientation="portrait", max_duration_s=60)` 部分设置；
+可用分辨率 `2k/1080p`、方向 `landscape/portrait`、时长 `30/60/180` 秒。
+未提供字段保留，设置设备级持久保存；拍照、录像或LAN导入忙碌时拒绝写入。
+涉及分辨率/方向时默认等待ISP确认，超时后继续查询，不自动重发。原`video_start(timeout=20)`
+的timeout仍是启动等待时间。CLI用`video config`查询，后接`--resolution`、`--orientation`、
+`--max-duration`设置。完整语义及示例见[SDK使用说明](docs/SDK_GUIDE.md#录像配置)。
 
 ## 存储照片、录像与 WiFi 原件导出
 

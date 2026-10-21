@@ -24,6 +24,32 @@ class CaptureState(IntEnum):
     UNKNOWN = 7
 
 
+class VideoResolution(IntEnum):
+    RES_2K = 0
+    RES_1080P = 1
+
+
+class VideoOrientation(IntEnum):
+    LANDSCAPE = 0
+    PORTRAIT = 1
+
+
+class VideoConfigState(IntEnum):
+    UNCONFIRMED = 0
+    PENDING = 1
+    APPLIED = 2
+
+
+@dataclass(frozen=True)
+class VideoConfig:
+    resolution: VideoResolution
+    orientation: VideoOrientation
+    max_duration_s: int
+    requested_resolution: VideoResolution
+    requested_orientation: VideoOrientation
+    sync_state: VideoConfigState
+
+
 @dataclass(frozen=True)
 class CaptureResult:
     operation_id: int
@@ -52,6 +78,69 @@ class CaptureClient:
     def capabilities(self) -> MediaCapabilities:
         from .catalog import CatalogClient
         return CatalogClient(self.session).capabilities()
+
+    def _video_config(self, command, args=b'') -> VideoConfig:
+        self.session._require(protocol.CAP_VIDEO_CONFIG)
+        data = self.session._request(command, args).data
+        if len(data) != 9:
+            raise EduClientError('invalid video config response length')
+        resolution, orientation, duration, wanted_res, wanted_mode, state = struct.unpack('<BBIBBB', data)
+        try:
+            config = VideoConfig(VideoResolution(resolution), VideoOrientation(orientation), duration,
+                                 VideoResolution(wanted_res), VideoOrientation(wanted_mode), VideoConfigState(state))
+        except ValueError as exc:
+            raise EduClientError('invalid video config response value') from exc
+        if config.sync_state == VideoConfigState.APPLIED and (resolution, orientation) != (wanted_res, wanted_mode):
+            raise EduClientError('confirmed video profile does not match the requested profile')
+        return config
+
+    def get_video_config(self) -> VideoConfig:
+        return self._video_config(protocol.CommandId.GET_VIDEO_CONFIG)
+
+    def set_video_config(self, *, resolution=None, orientation=None, max_duration_s=None,
+                         timeout: float = 45.0) -> VideoConfig:
+        deadline = time.monotonic() + self.session._duration(timeout)
+        mask, level, mode, duration = 0, 0, 0, 0
+        if resolution is not None:
+            if isinstance(resolution, str):
+                names = {'2k': VideoResolution.RES_2K, '1080p': VideoResolution.RES_1080P}
+                if resolution.lower() not in names:
+                    raise ValueError('resolution must be 2k or 1080p')
+                resolution = names[resolution.lower()]
+            if isinstance(resolution, bool) or not isinstance(resolution, int):
+                raise ValueError('resolution must be a VideoResolution or name')
+            level, mask = VideoResolution(resolution), mask | 1
+        if orientation is not None:
+            if isinstance(orientation, str):
+                names = {'landscape': VideoOrientation.LANDSCAPE, 'portrait': VideoOrientation.PORTRAIT}
+                if orientation.lower() not in names:
+                    raise ValueError('orientation must be landscape or portrait')
+                orientation = names[orientation.lower()]
+            if isinstance(orientation, bool) or not isinstance(orientation, int):
+                raise ValueError('orientation must be a VideoOrientation or name')
+            mode, mask = VideoOrientation(orientation), mask | 2
+        if max_duration_s is not None:
+            if type(max_duration_s) is not int or max_duration_s not in (30, 60, 180):
+                raise ValueError('max_duration_s must be 30, 60 or 180')
+            duration, mask = max_duration_s, mask | 4
+        if not mask:
+            raise ValueError('provide at least one video config field')
+        owner = self.session._client
+        config = self._video_config(protocol.CommandId.SET_VIDEO_CONFIG, struct.pack('<BBBI', mask, level, mode, duration))
+        if not mask & 3:
+            return config
+        expected = config.requested_resolution, config.requested_orientation
+        while True:
+            if not self.session.is_connected or self.session._client is not owner:
+                raise EduClientError('video config CTRL owner disconnected or changed')
+            if (config.requested_resolution, config.requested_orientation) != expected:
+                raise EduClientError('video config request failed or was superseded; query current config')
+            if config.sync_state == VideoConfigState.APPLIED:
+                return config
+            if time.monotonic() >= deadline:
+                raise EduTimeoutError('video config application unconfirmed; query get_video_config(); not retried')
+            self.session.wait(0.1)
+            config = self.get_video_config()
 
     def _require_capture(self, capability: int) -> None:
         self.session._require(capability | protocol.CAP_MEDIA_CATALOG)

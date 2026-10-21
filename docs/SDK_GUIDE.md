@@ -1,7 +1,7 @@
 # Looktech EDU 眼镜 Python SDK 使用说明
 
 本文面向需要在 PC 程序中调用眼镜能力的开发者，按当前 `feat/edu-sdk-integration`
-分支的 SDK 0.2.0 验证候选编写，更新于 2026-10-20。推荐从统一入口
+分支的 SDK 0.2.0 验证候选编写，更新于 2026-10-21。推荐从统一入口
 `edu_host.EduSession` 接入；CLI 和 Notebook 也使用这一入口。
 
 ## 阅读导航
@@ -109,6 +109,7 @@ finally:
 | `CONTROL` | `set_led()`、`play_tone()`、`reboot()` |
 | `WIFI` | `wifi_capabilities()`、`wifi_scan()`、配网和状态查询 |
 | `SAVED_PHOTO` + `MEDIA_CATALOG` | `capture_saved_photo()` |
+| `VIDEO_CONFIG` | `get_video_config()`、`set_video_config()` |
 | `VIDEO` + `MEDIA_CATALOG` | `video_start()`、`video_stop()`、`video_status()` |
 | `MEDIA_CATALOG` + `WIFI` | `media_import()`；真实媒体能力由 ISP 查询确认 |
 
@@ -206,6 +207,57 @@ with EduSession(bt="auto") as glasses:
 公版 DONE/RECORDING 不保证原件已发布、首帧已写入，也不会精确返回本次拍摄的媒体 ID。
 导出时从真实媒体列表选择；暂未出现时重新查询，不能按“最新文件”或最大 ID 猜测归属。
 UNKNOWN/超时不代表没有拍摄，SDK 不自动重拍；状态处理见[错误处理](#错误处理)。
+
+### 录像配置
+
+需要声明 `VIDEO_CONFIG` 的新EDU固件。分辨率是公版档位 `2k` / `1080p`，方向为
+`landscape` / `portrait`，最长时长为公版App的30 / 60 / 180秒，不接受任意宽高或秒数。
+配置保存在设备上，重启保留，下次录像使用；它不是某一次调用的临时参数。
+档位名称沿用公版，不能据此假设16:9画幅；本轮semi导出的原片尺寸如下：
+
+| 档位 | 横屏 | 竖屏 |
+|---|---|---|
+| `2k` | 2880×2160 | 2160×2880 |
+| `1080p` | 1440×1080 | 1080×1440 |
+
+```python
+from edu_host import EduSession
+
+with EduSession(bt="auto") as glasses:
+    print("原配置：", glasses.get_video_config())
+    config = glasses.set_video_config(
+        resolution="1080p", orientation="portrait", max_duration_s=60,
+        timeout=45,
+    )
+    print(config.resolution.name, config.orientation.name, config.max_duration_s)
+    print("同步状态：", config.sync_state.name)
+    # 部分更新：保留分辨率、方向和既有防抖参数
+    print(glasses.set_video_config(max_duration_s=30))
+```
+
+也可传 `VideoResolution.RES_2K/RES_1080P` 和 `VideoOrientation.LANDSCAPE/PORTRAIT`
+枚举，均从 `edu_host` 导入。`get_video_config()` 返回 `VideoConfig`：
+
+| 字段 | 含义 |
+|---|---|
+| `resolution` / `orientation` | BT持久配置中的profile；未确认时不能断言ISP已经生效 |
+| `max_duration_s` | BT保存的最长秒数，下次开始录像时传给ISP |
+| `requested_resolution` / `requested_orientation` | 当前最新请求目标，可能尚在排队/生效中 |
+| `sync_state` | `VideoConfigState.UNCONFIRMED` / `PENDING` / `APPLIED` |
+
+保存和生效沿用公版设置及ISP profile同步流程。SDK设置分辨率/方向时默认等待真实回读
+确认，返回APPLIED；只设置时长时保存后返回，profile状态可能仍是UNCONFIRMED/PENDING。
+查询不会把未确认状态伪装成功；APPLIED仅指profile确认，不是对录像文件尺寸或时长的测量。
+
+拍照、录像启动/录制/停止和LAN导入期间设置返回BUSY；查询仍可用。录像继续遵守公版
+充电/低电保护；当前semi充电时会拒绝开始录像，充电状态允许LAN导出，不能将两者混同。
+超时后可能仍在处理，
+保留同一连接继续`get_video_config()`查询，不自动重发。设备断连不会撤销已经受理的持久
+设置；新连接可以查询当前设备配置，但不会接管旧录像operation。
+
+旧`video_start()`无需新增参数；它使用设备配置。`video_start(timeout=20)`的timeout是
+等启动状态的超时，`set_video_config(timeout=45)`是等profile生效的超时，两者均不表示
+录像最长时长。旧固件缺少bit9时新配置接口抛`EduUnsupportedError`，原拍摄接口保持可用。
 
 ## 麦克风录音
 
@@ -493,6 +545,8 @@ with EduSession(bt="auto") as glasses:
 | `trigger_photo(filename=None, timeout=5)` / `wait_photo(timeout=30)` | 受理 `Response` / 完整图片 `Path` |
 | `capture_saved_photo(timeout=45)` | `CaptureResult`，原片保存的公版控制状态 |
 | `media_status(operation)` | `CaptureResult`，同 owner 最近操作的当前状态 |
+| `get_video_config()` | `VideoConfig`，保存值、请求目标及profile同步状态 |
+| `set_video_config(*, resolution=None, orientation=None, max_duration_s=None, timeout=45)` | 部分设置，返回`VideoConfig`；无字段或非法值报错 |
 | `video_start(timeout=20)` | `CaptureResult`，等待 RECORDING 或实际终态 |
 | `video_stop(operation=None, timeout=45)` / `video_status(operation=None)` | `CaptureResult`；省略 ID 使用最近录像操作 |
 | `record(filename, seconds, timeout=5)` | 实际音频文件 `Path` |
@@ -529,6 +583,7 @@ ota=None, out_dir="captures")`；普通接入优先使用蓝牙地址或串口�
 | `photo [out.jpg]` | 教学 JPEG 回传 |
 | `photo-save` | `capture_saved_photo()` |
 | `video start\|stop\|status` | 录像控制和查询 |
+| `video config [--resolution 2k\|1080p] [--orientation landscape\|portrait] [--max-duration 30\|60\|180]` | 无选项查询，提供选项部分设置 |
 | `record start [out.wav]` / `record stop` | 麦克风录音 |
 | `wifi caps\|scan\|status\|disconnect` / `wifi connect <wifi.json>` | WiFi 诊断和入网 |
 | `media caps` / `media open <wifi.json>` / `media list` | 真实媒体能力和导入上下文 |
@@ -543,21 +598,24 @@ ota=None, out_dir="captures")`；普通接入优先使用蓝牙地址或串口�
 
 ## 验收范围与已知边界
 
-当前 SDK 功能基线为 `6f147e5`，BT 功能基线 `51a1d390`，ISP 保持公版。协议仍为
+当前文档覆盖SDK功能分支的录像配置扩展，BT功能基线 `9b1439a3`，ISP保持公版。协议仍为
 EDU v1，使用新增能力位发现存储拍摄和 LAN 扩展；旧固件缺少扩展时应明确拒绝。
 这些是功能分支验证候选，尚未合并两仓库 main 或形成正式发布版本。
 
 - 2026-10-20 macOS + semi 实机已验证存储照片、录像启停、真实 ID/元数据、JPEG/MP4
   及登记 gyro 导出、显式删除、下载 TCP 中断重试和取消；按键拍照/录像及灯效由用户确认。
   CTRL 断连后底层录像清理与新 owner 隔离已有实测。
+- 2026-10-21 在 `/dev/cu.usbserial-312400` 的semi上验证录像配置查询、部分更新、非法参数
+  和忙碌拒绝、30/60/180秒保存回读、四种profile真实录像及WiFi原件导出；原件尺寸见上表。
+  30秒自动停止文件实测29.9997秒，1080P竖屏/60秒配置经重启保留，测试后恢复2K横屏/30秒。
 - 基础教学 JPEG、录音、传感器、LED/提示音及历史 OTA 证据见
   [2026-10-16 回归报告](MAC_REGRESSION_20261016.md)；不能将历史 OTA 或 TCP 中断测试
   外推为当前固件完整 OTA/断电、无线掉线或系统保护矩阵全部通过。
-- Windows/Linux、配对保护、录像自动结束、启动中停止，以及通话/低电/充电/OTA
-  冲突的完整矩阵尚未覆盖；这些验证按当前决策暂缓，不在本轮文档任务中补做。
+- Windows/Linux、配对保护、启动中停止，以及通话/低电/充电/OTA冲突的完整矩阵尚未覆盖；
+  不能将30秒自动结束测试外推为全部时长和保护场景均已通过。
 - 已知问题：存储照片 DONE 后立即调用教学小图，曾触发公版 ISP `0x92` 并导致
   TIMEOUT/后续 BUSY；当前尚未修复。不要将混合快速连续调用视为已支持，也不保证
   用固定延迟即可规避。
 
 完整线协议与状态码见 [PROTOCOL.md](PROTOCOL.md)；固件设计及设备验收记录见
-[固件规格第 14 节](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/docs/plans/stereo-edu-spp-firmware.md)。
+[固件规格第 14–15 节](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/docs/plans/stereo-edu-spp-firmware.md)。

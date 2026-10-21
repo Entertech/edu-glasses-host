@@ -4,10 +4,10 @@
 2026-10-16 已在 LTFTDI07 开发板完成 pro / edu 烧录、Samsung 公版 App 回归、
 新旧 SDK 的 EDU v1 功能和拍照/录音断链恢复、BT 单模块 OTA 错误拒绝与断点续传验收。
 
-## 当前功能适配（2026-10-20）
+## 当前功能适配（2026-10-21）
 
 存储拍照、录像和 WiFi 原件导出需 `feat/edu-main-integration` 当前功能固件
-（源提交 `51a1d390`）及支持公版 ID/BASE/LAN 能力的 ISP；ISP 不需要 EDU 定制改动。
+（源提交 `9b1439a3`，含 `VIDEO_CONFIG` 录像配置扩展）及支持公版 ID/BASE/LAN 能力的 ISP；ISP 不需要 EDU 定制改动。
 本目录下列历史产物不包含这些扩展，不能据此判断新 SDK 功能不可用。请从固件维护者
 取得与硬件匹配的当前产物，并在连接后核对 `glasses.capabilities` 和
 `glasses.media_capabilities()`。接入方式见 [SDK 使用说明](../docs/SDK_GUIDE.md)。

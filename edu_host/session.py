@@ -251,6 +251,16 @@ class EduSession:
         from .capture import CaptureClient
         return CaptureClient(self).video_start(timeout)
 
+    def get_video_config(self):
+        from .capture import CaptureClient
+        return CaptureClient(self).get_video_config()
+
+    def set_video_config(self, *, resolution=None, orientation=None, max_duration_s=None,
+                         timeout: float = 45.0):
+        from .capture import CaptureClient
+        return CaptureClient(self).set_video_config(resolution=resolution, orientation=orientation,
+                                                   max_duration_s=max_duration_s, timeout=timeout)
+
     def video_stop(self, operation: Optional[int] = None, timeout: float = 45.0):
         from .capture import CaptureClient
         return CaptureClient(self).video_stop(operation, timeout)

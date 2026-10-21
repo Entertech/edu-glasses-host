@@ -91,7 +91,7 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 ### 3.1 存储拍摄与 LAN 导出扩展
 
 保留 v1、11B HELLO_ACK、990B 帧和旧命令。HELLO caps 新增 bit5 WIFI、bit6
-SAVED_PHOTO、bit7 VIDEO、bit8 MEDIA_CATALOG。bit8 标识本节的公版 ISP 桥接合同，
+SAVED_PHOTO、bit7 VIDEO、bit8 MEDIA_CATALOG，bit9 VIDEO_CONFIG。bit8 标识本节的公版 ISP 桥接合同，
 新 SDK 在使用下列拍摄/媒体命令前要求它；不与此前未发布的精确发布原型混用。
 原 TAKE_PHOTO 为教学小图，AUDIO_START/STOP 为音频推流。ISP 固件、索引及路由不变。
 
@@ -172,6 +172,32 @@ SDK 开启LAN后固定实际endpoint/catalog，只接受照片/视频ID，下载
 LAN继承公版可读可删边界，不增加PC token。上下文交互空档约30秒GET /保活；关闭或CTRL
 失效清理所属HTTP/STA，停止未确认保留hold。macOS所有SPP调用在调用线程，HTTP工作线程
 运行期间调用线程继续poll；不会从HTTP线程发蓝牙命令。
+
+### 3.3 录像配置扩展
+
+HELLO bit9 VIDEO_CONFIG 单独标识本扩展；保持v1、旧命令、11B HELLO_ACK及990B帧不变。
+
+| cmd_id | 命令 | args | RSP data（status=OK） |
+|---|---|---|---|
+| 0x28 | GET_VIDEO_CONFIG | 无 | 9B配置，见下 |
+| 0x29 | SET_VIDEO_CONFIG | `mask u8, resolution u8, orientation u8, max_duration_s u32`（7B） | 同上，仅表示保存及同步请求已受理 |
+
+mask的bit0选择分辨率、bit1方向、bit2时长，仅允许1..7。resolution：0=2K、1=1080P；
+orientation：0=landscape、1=portrait；时长仅30/60/180秒。未选择字段忽略并保留设备现值；
+保留enable_eis。所有字段先校验，再持久保存；拍照、录像及LAN导入忙碌时SET返回BUSY。
+不更改公版RPC已有时长取值兼容性，不更改ISP协议或KV布局。
+
+配置响应依次为：保存的resolution u8、orientation u8、max_duration_s u32，最新请求的
+requested_resolution u8、requested_orientation u8、sync_state u8。state：0 UNCONFIRMED、
+1 PENDING、2 APPLIED。APPLIED仅指profile已通过既有ISP回读确认，且没有在途请求/对账；
+ISP断电或尚未确认不能报APPLIED。时长是BT保存值，下次录像传给ISP，不宣称已由ISP回读。
+保存值和最新请求值可能不同，不能把SET的OK当作已生效。配置是设备级的，CTRL断开后已受理
+同步继续，不将配置变成录像operation；owner仍检查当前控制连接是否有效。
+
+SDK get_video_config()读取快照；set_video_config仅修改提供的关键字字段，涉及profile时
+默认等到APPLIED并匹配目标。仅改时长时保存后返回，profile状态仍如实表达。超时不重发，
+调用者可继续GET查询；新请求覆盖或ISP拒绝导致目标不匹配时明确失败。缺bit9的旧固件明确不支持。
+
 
 ## 4. 事件（EVT）
 
