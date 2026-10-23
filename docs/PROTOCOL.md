@@ -311,6 +311,7 @@ HELLO 新增 bit10 `NATIVE_INPUT`、bit11 `DEVICE_CAPTURE_STATE`。v1 帧、11B 
 | `0x05` | EVT | CAPTURE_STATE | 同一份 8B 快照 |
 | `0x06` | EVT | AUDIO_RECORD_REQUEST | action u8：0 停止/完成 PC 文件，1 请求 PC 准备接收再调用 AUDIO_START |
 
+快照仅观察存储照片和视频；教学小图继续使用 IMG_STATE，不写入该快照。
 快照按照片、视频顺序排列，每项为 `kind u8, source u8, state u8, error u8`。
 kind=1 PHOTO / 2 VIDEO；source=0 NONE / 1 LOCAL / 2 APP / 3 AI / 4 EDU；
 state=0 IDLE / 1 STARTING / 2 RECORDING / 3 STOPPING / 4 DONE / 6 FAILED / 7 UNKNOWN。

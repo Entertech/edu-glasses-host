@@ -650,7 +650,8 @@ with EduSession(bt="auto") as glasses:
 
 `get_capture_state() -> DeviceCaptureState` 和同类型事件包含 `photo`、`video` 两个
 `DeviceCaptureEntry(kind, source, state, error)`，枚举为 `CaptureKind`、`CaptureSource`、`CaptureState`。
-只读快照保留每类最新终态，重启后为 NONE/IDLE；没有可控制的 operation，不能据此
+只读快照观察存储照片和视频，教学小图继续使用 `ImgStateEvent`。每类保留最新终态，重启后为 NONE/IDLE；
+没有可控制的 operation，不能据此
 调用 `video_stop()` 接管本地录像，也不证明文件已发布。原件仍从真实 ID 媒体目录选择下载。
 
 录音双击按公版双击配置产生 `AudioRecordRequestEvent(start=True)`，固件此时不开麦。
