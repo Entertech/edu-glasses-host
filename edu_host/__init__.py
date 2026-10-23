@@ -26,7 +26,8 @@ from .capture import (CaptureError, CaptureResult, CaptureState,
                       VideoOrientation, VideoResolution)
 from .bt_discovery import AmbiguousGlassesError
 from .ota_client import OTAError, OTAStatusError, OTATimeoutError, UpdateResultResponse
-from .protocol import (AudioStateEvent, ButtonEvent, CaptureEvt, CompletedImage,
+from .protocol import (AudioRecordRequestEvent, CaptureKind, CaptureSource,
+                       DeviceCaptureEntry, DeviceCaptureState, AudioStateEvent, ButtonEvent, CaptureEvt, CompletedImage,
                        DeviceInfo, EduEvent,
                        HelloAck, ImgStateEvent, KnobEvent, LedColor, LedId,
                        LedMode, LedSpeed, SensorData, Tone, UnknownEvent)
@@ -53,8 +54,9 @@ __all__ = [
     "OTAError", "OTAStatusError", "OTATimeoutError",
     "UpdateResultResponse", "CompletedImage", "EduEvent",
     "HelloAck", "DeviceInfo", "SensorData", "ButtonEvent", "KnobEvent",
+    "AudioRecordRequestEvent", "CaptureKind", "CaptureSource", "DeviceCaptureEntry", "DeviceCaptureState",
     "AudioStateEvent", "ImgStateEvent", "UnknownEvent", "CaptureEvt",
     "LedId", "LedMode", "LedColor", "LedSpeed", "Tone",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

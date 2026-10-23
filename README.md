@@ -11,7 +11,7 @@
 ## 在自己的项目中安装
 
 Python 3.9+。SDK可通过pip从Git安装，无需复制SDK源码或下载demo。
-当前0.3.0是功能分支候选，尚未发布到PyPI；`pip install edu-glasses-host`不能作为当前版本的安装方式。
+当前0.4.0是功能分支候选，尚未发布到PyPI；`pip install edu-glasses-host`不能作为当前版本的安装方式。
 Git安装需要本机有Git，源码见 `feat/edu-sdk-integration`，尚未合并main。
 
 ```bash
@@ -85,3 +85,7 @@ HELLO用于能力发现，不提供额外权限分级。WiFi导出沿用公版IS
 
 已有实机结果和已知问题见[验收范围](docs/SDK_GUIDE.md#验收范围与已知边界)。
 仓库拆分只调整打包和示例归属，不改变设备协议或SDK调用行为。
+
+SDK 0.4.0 增加原生输入能力识别、`get_capture_state()` 及设备拍摄/录音请求事件。
+新版固件的拍照、录像由设备按键直接完成；PC 原始事件仅作观察。集成方式见
+[SDK 使用说明](docs/SDK_GUIDE.md)。先升级 SDK/demo，再更新原生输入固件，避免旧 demo 重复拍摄。

@@ -36,3 +36,10 @@ Notebook安装 `python -m pip install -e '.[notebooks]'` 后在`examples/noteboo
 
 拆分验收检查SDK wheel不含demo模块/入口、SDK单独安装后导入、demo依赖SDK wheel后启动、
 既有检查和Notebook代码的语法/导入。硬件协议和收发实现保持原样，本次不重烧固件或重跑实机矩阵。
+
+## 0.4.0：原生输入
+
+新增 DEVICE_CAPTURE_STATE、NATIVE_INPUT 能力及只读状态 API/事件；旧公开接口保留。
+收到 NATIVE_INPUT 时，移除原始 CAPTURE 事件到 SDK 拍照/录像的自动映射。
+录音请求事件是 PC 业务意图，需要应用准备接收后调用原录音方法；不会自动开麦。
+先升级 PC 程序再升级原生输入固件。普通 CLI/Notebook 调用及旧固件能力回退保持兼容。

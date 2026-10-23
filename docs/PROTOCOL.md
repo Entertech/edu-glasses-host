@@ -225,7 +225,7 @@ SDK get_video_config()读取快照；set_video_config仅修改提供的关键字
 | 10 | 超长按抬起 | 22 | 上滑 |
 | 11 | 超超长按 | 23 | 下滑 |
 
-按键本地行为（音量/媒体/通话控制）保留，事件为旁路转发；拍照键不再本地拍照。
+按键原始事件为旁路转发；声明 NATIVE_INPUT 时启用本地拍照、录像和录音请求，见文末原生输入扩展。
 参考 CLI demo 在 PC 端将 CAPTURE 的 SINGLE 映射到存储拍照、LONG 映射到录像启动，
 录像中再次 PRESS 映射到停止；灯效由共享固件拍摄能力处理。这是 demo 行为，不改变
 事件协议，普通 SDK/Notebook 的事件监听没有自动拍摄副作用。
@@ -300,3 +300,33 @@ SDK 入口为 `edu_host.EduSession`；CLI 和 Notebook 复用它，不另行编�
 升级命令：`ota <firmware.bin>`（升级包由固件维护方提供）；macOS `--bt auto`
 路径通过 SDP 查找 0x2026，Windows/Linux `--bt` 默认 OTA RFCOMM channel 为 7，
 可用 `--ota-channel` 覆盖。
+
+## 原生输入与设备拍摄观察（SDK 0.4.0）
+
+HELLO 新增 bit10 `NATIVE_INPUT`、bit11 `DEVICE_CAPTURE_STATE`。v1 帧、11B HELLO_ACK、已有命令及 BUTTON/KNOB payload 不变。
+
+| 编号 | 方向 | 名称 | 数据 |
+|---|---|---|---|
+| `0x2A` | CMD | GET_CAPTURE_STATE | 无参数；成功 RSP data 为下述 8B 快照 |
+| `0x05` | EVT | CAPTURE_STATE | 同一份 8B 快照 |
+| `0x06` | EVT | AUDIO_RECORD_REQUEST | action u8：0 停止/完成 PC 文件，1 请求 PC 准备接收再调用 AUDIO_START |
+
+快照按照片、视频顺序排列，每项为 `kind u8, source u8, state u8, error u8`。
+kind=1 PHOTO / 2 VIDEO；source=0 NONE / 1 LOCAL / 2 APP / 3 AI / 4 EDU；
+state=0 IDLE / 1 STARTING / 2 RECORDING / 3 STOPPING / 4 DONE / 6 FAILED / 7 UNKNOWN。
+无操作时 source/state/error 均为0；每类保留最新操作终态，重启归零。它只表示 BT 控制状态，
+不含 operation、媒体 ID 或文件已发布的承诺，也不授予停止权。事件可能在断连时丢失，重连主动查询。
+
+`NATIVE_INPUT` 表示构建开启原生拍照/录像/录音键。按键照片和录像 owner 为 LOCAL，
+不依赖 CTRL；物理键可停止 SDK 录像。PC 发起操作继续属于当前 EDU 会话，断连清理，
+SDK 不能用设备快照接管本地或其他会话的 operation。媒体、通话与旋钮音量使用既有公版分发。
+三击后长按配对优先；灯效、提示音、配置及电量/充电/繁忙保护使用共享业务流程。
+
+录音双击动作仍受公版双击配置约束；开始事件只是意图，固件此时不开麦。
+接收程序准备好文件后调用既有 AUDIO_START，实际流属于该 PC 会话；无 PC 不提供离线录音。
+物理键停止录音在固件共用停止入口完成，停止事件让 PC 收尾；SDK 订阅事件不自动开始录音。
+AI/翻译完整业务需要 PC 服务实现，本次不提供该服务。
+
+先升级 SDK/demo 再更新原生输入固件。新版 demo 在 `NATIVE_INPUT` 存在时不再把原始拍摄事件
+转为拍照/录像命令；旧固件仍使用旧映射。旧 demo 无此识别，可能重复拍摄，须升级或移除旧映射。
+`CONFIG_LT_EDU_NATIVE_INPUT=n` 可构建回原先 EDU 拍摄按键模式；设备状态查询仍可用。

@@ -239,6 +239,11 @@ class EduSession:
         from .capture import CaptureClient
         return CaptureClient(self).capabilities()
 
+    def get_capture_state(self) -> protocol.DeviceCaptureState:
+        """Observe latest device states without adopting native operations."""
+        from .capture import CaptureClient
+        return CaptureClient(self).device_state()
+
     def capture_saved_photo(self, timeout: float = 45.0):
         from .capture import CaptureClient
         return CaptureClient(self).photo(timeout)

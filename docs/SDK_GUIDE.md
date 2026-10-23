@@ -1,7 +1,7 @@
 # Looktech EDU 眼镜 Python SDK 使用说明
 
 本文面向需要在 PC 程序中调用眼镜能力的开发者，按当前 `feat/edu-sdk-integration`
-分支的 SDK 0.3.0 验证候选编写，更新于 2026-10-23。推荐从统一入口
+分支的 SDK 0.4.0 候选编写，更新于 2026-10-23。推荐从统一入口
 `edu_host.EduSession` 接入；独立[Demo仓库](https://github.com/Entertech/edu-glasses-demo)的CLI和Notebook也使用这一入口。
 
 ## 阅读导航
@@ -45,7 +45,7 @@ python -m pip install "edu-glasses-host[macos] @ git+https://github.com/Entertec
 
 应用的`requirements.txt`可填写同样的`edu-glasses-host @ git+https://...`依赖。
 Git安装需要本机有Git；建议把分支名替换为维护者验收过的完整commit SHA。
-维护者也可构建并提供wheel，业务项目通过`python -m pip install /path/to/edu_glasses_host-0.3.0-py3-none-any.whl`离线安装。
+维护者也可构建并提供wheel，业务项目通过`python -m pip install /path/to/edu_glasses_host-0.4.0-py3-none-any.whl`离线安装。
 SDK无必选运行依赖；源码开发仍支持在SDK仓库根目录`python -m pip install -e .`。
 
 | 可选功能 | extras | 说明 |
@@ -107,6 +107,8 @@ finally:
 | `AUDIO_STREAM` | `record()`、`record_start()`、`record_stop()`，还需 AUDIO 通道 |
 | `SENSORS` | `sensors()` |
 | `INPUT_EVENTS` | 按键/旋钮事件 |
+| `NATIVE_INPUT` | 设备原生拍照/录像按键及 PC 录音请求，原始事件仅观察 |
+| `DEVICE_CAPTURE_STATE` | 只读查询和观察设备最新拍摄状态 |
 | `CONTROL` | `set_led()`、`play_tone()`、`reboot()` |
 | `WIFI` | `wifi_capabilities()`、`wifi_scan()`、配网和状态查询 |
 | `SAVED_PHOTO` + `MEDIA_CATALOG` | `capture_saved_photo()` |
@@ -284,7 +286,8 @@ with EduSession(bt="auto", out_dir="captures") as glasses:
 ## 事件监听与自定义
 
 `EduSession` 只分发事件，不自动把按键绑定到拍摄。应用可以自行决定每个事件对应的
-业务动作，但不能改变物理按键已经包含的固件本地音量/通话/配对行为。
+业务动作；声明 NATIVE_INPUT 时固件已执行本地拍照/录像，不应重复发命令。
+物理按键包含的本地音量/通话/配对行为同样保留。
 
 | 类型 | 主要字段 | 用途 |
 |---|---|---|
@@ -625,3 +628,38 @@ EDU v1，使用新增能力位发现存储拍摄和 LAN 扩展；旧固件缺少
 
 完整线协议与状态码见 [PROTOCOL.md](PROTOCOL.md)；固件设计及设备验收记录见
 [固件规格第 14–15 节](https://github.com/Entertech/Looktech-Glasses-Device/blob/feat/edu-main-integration/docs/plans/stereo-edu-spp-firmware.md)。
+
+## 原生按键与状态观察（0.4.0）
+
+新版 EDU 固件默认在设备侧处理拍照键：单击存储拍照，长按录像，录像中再按停止。
+PC 断开不影响本地拍摄；SDK 发起的录像仍随所属连接断开而停止。旋钮音量、媒体及通话
+按键沿用公版。原始 `ButtonEvent`/`KnobEvent` 仍可订阅，但不要再把同一个拍摄事件自动映射成 SDK 拍摄命令。
+
+```python
+from edu_host import EduSession, DeviceCaptureState, AudioRecordRequestEvent
+
+with EduSession(bt="auto") as glasses:
+    print("原生按键:", glasses.supports("NATIVE_INPUT"))
+    if glasses.supports("DEVICE_CAPTURE_STATE"):
+        state = glasses.get_capture_state()
+        print(state.photo.source.name, state.photo.state.name)
+        print(state.video.source.name, state.video.state.name)
+    glasses.add_event_listener(print)  # 回调只观察/排队，不能重入 SDK
+    glasses.wait(30)
+```
+
+`get_capture_state() -> DeviceCaptureState` 和同类型事件包含 `photo`、`video` 两个
+`DeviceCaptureEntry(kind, source, state, error)`，枚举为 `CaptureKind`、`CaptureSource`、`CaptureState`。
+只读快照保留每类最新终态，重启后为 NONE/IDLE；没有可控制的 operation，不能据此
+调用 `video_stop()` 接管本地录像，也不证明文件已发布。原件仍从真实 ID 媒体目录选择下载。
+
+录音双击按公版双击配置产生 `AudioRecordRequestEvent(start=True)`，固件此时不开麦。
+应用若支持此动作，应在回调中排队，在主循环调用 `record_start(唯一文件名)`，该方法先准备
+接收端再发送 AUDIO_START；`start=False` 时对正在录制的 SDK 会话调用 `record_stop()` 完成文件。
+流属于接收 PC，断连清理；没有接收程序不做离线录音。官方 demo 已实现该接收流程；
+SDK 本身不会因为订阅事件自动录音。AI/翻译完整业务仍需应用自行实现。
+
+配套 demo 在 NATIVE_INPUT 存在时关闭旧拍摄映射，在旧固件上保留原映射。
+请先升级 SDK/demo，再更新原生输入固件；旧 demo 可能重复拍摄。
+
+本轮仅完成编译和离线验证，原生按键时序、灯效和 PC 录音收尾尚未实机验收。

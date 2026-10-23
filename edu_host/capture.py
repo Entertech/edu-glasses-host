@@ -10,18 +10,10 @@ from typing import TYPE_CHECKING, Optional
 from . import protocol
 from .client import EduClientError, EduTimeoutError
 from .catalog import MediaCapabilities
+from .protocol import CaptureState, DeviceCaptureState
 
 if TYPE_CHECKING:
     from .session import EduSession
-
-
-class CaptureState(IntEnum):
-    STARTING = 1
-    RECORDING = 2
-    STOPPING = 3
-    DONE = 4
-    FAILED = 6
-    UNKNOWN = 7
 
 
 class VideoResolution(IntEnum):
@@ -145,6 +137,14 @@ class CaptureClient:
     def _require_capture(self, capability: int) -> None:
         self.session._require(capability | protocol.CAP_MEDIA_CATALOG)
 
+    def device_state(self) -> DeviceCaptureState:
+        self.session._require(protocol.CAP_DEVICE_CAPTURE_STATE)
+        data = self.session._request(protocol.CommandId.GET_CAPTURE_STATE).data
+        try:
+            return DeviceCaptureState.parse(data)
+        except ValueError as exc:
+            raise EduClientError('invalid device capture state') from exc
+
     def status(self, operation: int) -> CaptureResult:
         self.session._require(protocol.CAP_MEDIA_CATALOG)
         if type(operation) is not int or not 0 < operation <= 0xffffffff:
@@ -153,7 +153,7 @@ class CaptureClient:
         if len(data) != 7:
             raise EduClientError('invalid capture status response')
         op, kind, state, error = struct.unpack('<IBBB', data)
-        if op != operation or kind not in (1, 2):
+        if op != operation or kind not in (1, 2) or state == CaptureState.IDLE:
             raise EduClientError('capture status identity does not match request')
         try:
             return CaptureResult(op, kind, CaptureState(state), error)

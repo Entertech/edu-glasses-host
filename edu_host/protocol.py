@@ -74,6 +74,7 @@ class CommandId(IntEnum):
     MEDIA_IDS = 0x27
     GET_VIDEO_CONFIG = 0x28
     SET_VIDEO_CONFIG = 0x29
+    GET_CAPTURE_STATE = 0x2A
 
 
 class Status(IntEnum):
@@ -93,6 +94,8 @@ class EventId(IntEnum):
     KNOB = 0x02
     AUDIO_STATE = 0x03
     IMG_STATE = 0x04
+    CAPTURE_STATE = 0x05
+    AUDIO_RECORD_REQUEST = 0x06
 
 
 class LedId(IntEnum):
@@ -168,6 +171,8 @@ CAP_SAVED_PHOTO = 1 << 6
 CAP_VIDEO = 1 << 7
 CAP_MEDIA_CATALOG = 1 << 8
 CAP_VIDEO_CONFIG = 1 << 9
+CAP_NATIVE_INPUT = 1 << 10
+CAP_DEVICE_CAPTURE_STATE = 1 << 11
 
 CAP_NAMES = {
     CAP_AUDIO_STREAM: "AUDIO_STREAM",
@@ -180,6 +185,8 @@ CAP_NAMES = {
     CAP_VIDEO: "VIDEO",
     CAP_MEDIA_CATALOG: "MEDIA_CATALOG",
     CAP_VIDEO_CONFIG: "VIDEO_CONFIG",
+    CAP_NATIVE_INPUT: "NATIVE_INPUT",
+    CAP_DEVICE_CAPTURE_STATE: "DEVICE_CAPTURE_STATE",
 }
 
 
@@ -538,6 +545,67 @@ class ImgStateEvent:
                                           enum_name(CaptureErrorCode, self.error))
 
 
+class CaptureState(IntEnum):
+    IDLE = 0
+    STARTING = 1
+    RECORDING = 2
+    STOPPING = 3
+    DONE = 4
+    FAILED = 6
+    UNKNOWN = 7
+
+
+class CaptureKind(IntEnum):
+    PHOTO = 1
+    VIDEO = 2
+
+
+class CaptureSource(IntEnum):
+    NONE = 0
+    LOCAL = 1
+    APP = 2
+    AI = 3
+    EDU = 4
+
+
+@dataclass(frozen=True)
+class DeviceCaptureEntry:
+    kind: CaptureKind
+    source: CaptureSource
+    state: CaptureState
+    error: int
+
+
+@dataclass(frozen=True)
+class DeviceCaptureState:
+    """Read-only latest photo/video states; grants no operation ownership."""
+
+    photo: DeviceCaptureEntry
+    video: DeviceCaptureEntry
+
+    @classmethod
+    def parse(cls, data: bytes) -> "DeviceCaptureState":
+        if len(data) != 8:
+            raise ValueError("capture state must contain exactly two entries")
+        entries = []
+        for offset, expected_kind in ((0, CaptureKind.PHOTO), (4, CaptureKind.VIDEO)):
+            kind, source, state, error = data[offset:offset + 4]
+            entry = DeviceCaptureEntry(CaptureKind(kind), CaptureSource(source), CaptureState(state), error)
+            if entry.kind != expected_kind:
+                raise ValueError("capture state kind/order mismatch")
+            if (entry.source == CaptureSource.NONE) != (entry.state == CaptureState.IDLE):
+                raise ValueError("capture state source/idle mismatch")
+            entries.append(entry)
+        return cls(*entries)
+
+
+@dataclass(frozen=True)
+class AudioRecordRequestEvent:
+    """Native record intent; prepare the sink before issuing AUDIO_START."""
+
+    start: bool
+
+
 @dataclass
 class UnknownEvent:
     """An event id we do not know — kept raw so nothing is silently lost."""
@@ -550,7 +618,7 @@ class UnknownEvent:
 
 
 EduEvent = Union[ButtonEvent, KnobEvent, AudioStateEvent, ImgStateEvent,
-                 UnknownEvent]
+                 DeviceCaptureState, AudioRecordRequestEvent, UnknownEvent]
 
 
 def parse_event(payload: bytes) -> EduEvent:
@@ -567,6 +635,13 @@ def parse_event(payload: bytes) -> EduEvent:
         return AudioStateEvent(state=data[0], source=data[1], err=data[2])
     if evt_id == EventId.IMG_STATE and len(data) >= 2:
         return ImgStateEvent(capture_evt=data[0], error=data[1])
+    if evt_id == EventId.CAPTURE_STATE:
+        try:
+            return DeviceCaptureState.parse(data)
+        except ValueError:
+            return UnknownEvent(evt_id=evt_id, data=bytes(data))
+    if evt_id == EventId.AUDIO_RECORD_REQUEST and len(data) == 1 and data[0] in (0, 1):
+        return AudioRecordRequestEvent(start=bool(data[0]))
     return UnknownEvent(evt_id=evt_id, data=bytes(data))
 
 
