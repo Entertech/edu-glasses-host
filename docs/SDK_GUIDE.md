@@ -656,7 +656,9 @@ with EduSession(bt="auto") as glasses:
 录音双击按公版双击配置产生 `AudioRecordRequestEvent(start=True)`，固件此时不开麦。
 应用若支持此动作，应在回调中排队，在主循环调用 `record_start(唯一文件名)`，该方法先准备
 接收端再发送 AUDIO_START；`start=False` 时对正在录制的 SDK 会话调用 `record_stop()` 完成文件。
-流属于接收 PC，断连清理；没有接收程序不做离线录音。官方 demo 已实现该接收流程；
+流属于接收 PC，断连清理；没有接收程序不做离线录音。录音继续沿用 EDU 接收流的充电、重试和静音提示策略。
+事件的 `received_at` 是接收帧时的本机单调秒数，应用应拒绝忙碌期间或已过期的开始意图。
+官方 demo 已实现该接收流程；
 SDK 本身不会因为订阅事件自动录音。AI/翻译完整业务仍需应用自行实现。
 
 配套 demo 在 NATIVE_INPUT 存在时关闭旧拍摄映射，在旧固件上保留原映射。

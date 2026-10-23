@@ -17,6 +17,7 @@ the CRC itself are excluded).
 from __future__ import annotations
 
 import struct
+import time
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import List, Optional, Union
@@ -601,9 +602,13 @@ class DeviceCaptureState:
 
 @dataclass(frozen=True)
 class AudioRecordRequestEvent:
-    """Native record intent; prepare the sink before issuing AUDIO_START."""
+    """Native record intent; received_at is host monotonic seconds at parsing.
+
+    Prepare the sink before AUDIO_START; reject busy or stale start intents.
+    """
 
     start: bool
+    received_at: float = field(default_factory=time.monotonic, compare=False, repr=False)
 
 
 @dataclass
