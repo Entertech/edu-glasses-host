@@ -1,164 +1,34 @@
 # AGENTS.md — edu-glasses-host
 
-给 coding agent（Claude Code / Codex / Cursor 等）的仓库操作指南。
-人类读者请从 [README.md](README.md) 开始。
+本仓库维护可独立安装的`edu_host` SDK、既有检查、[通信协议](docs/PROTOCOL.md)和
+[SDK使用说明](docs/SDK_GUIDE.md)。CLI、Notebook与设备操作技能在
+[edu-glasses-demo](https://github.com/Entertech/edu-glasses-demo)维护；需要操作demo时阅读该仓库AGENTS.md。
 
-## 这个仓库是什么
+## 修改与验收
 
-Looktech **教育版眼镜**的 Python 上位机：通过经典蓝牙 SPP 与眼镜通信，演示
-5 个能力 —— 设备信息、传感器查询、拍照回传、麦克风录音（OPUS→WAV）、
-按键/旋钮事件。协议的**唯一事实来源**是 [docs/PROTOCOL.md](docs/PROTOCOL.md)；
-`edu_host/` 包和 `tests/` 是它的参考实现与可执行规格。
-
-`.claude/skills/` 下有按任务拆好的 skill（连接排障、拍照、录音、传感器、
-事件监听、OTA 升级、设备控制（重启/LED/提示音）、协议二次开发），
-Claude Code 打开本仓库即自动可用。
-
-## 环境与安装
-
-- Python **3.9+**。
-- **Windows / Linux + `--bt`**：零额外依赖（标准库蓝牙 socket）。Windows 需
-  python.org 官方构建（内置 `AF_BTH`）。
-- **macOS + `--bt`**：`pip install pyobjc-core pyobjc-framework-IOBluetooth`。
-- 录音出 WAV（可选）：`pip install opuslib` + 本机 libopus——macOS
-  `brew install opus`（运行时可能需要 `export DYLD_LIBRARY_PATH=/opt/homebrew/lib`）；
-  Windows 需将 64 位 `opus.dll` 放到 `python.exe` 旁或 `PATH`。缺 opuslib 时
-  录音降级（见 README §4），不算错误。
-- 串口后备路径才需要 `pyserial`。
-
-## 连接设备（前置条件）
-
-1. 眼镜开机后自动可发现（约 2 分钟窗口）；或拍照键三击后按住 5 秒手动进入配对。
-2. 先在**操作系统蓝牙设置**里配对眼镜（设备名 `EDU-Glasses-xxxx`）。
-3. 蓝牙地址（`AA:BB:CC:DD:EE:FF`）在系统蓝牙设置里可见。**不要猜地址**——
-   问用户要，或直接用 `--bt auto`（**优先当前已连接**的 `EDU-*` 设备：macOS/
-   Linux 能查连接状态直接选中；Windows 多台配对时报歧义要求 --bt 指定）。
+1. SDK功能放在`edu_host/`并经`EduSession`统一暴露。既有低层API与`from edu_host import ...`保持兼容。
+2. 协议变更先与固件对齐，更新`docs/PROTOCOL.md`；公开API、安装方式变化同步更新SDK使用说明。
+3. Python 3.9+；SDK基础安装无必选依赖，`macos`、`serial`、`audio`按需安装。入口与版本在`pyproject.toml`，`edu_host.__version__`同步。
+4. 检查SDK wheel只包含`edu_host`，不包含demo模块或控制台入口。demo只安装SDK，不导入邻接源码树。
+5. 在SDK仓库执行既有检查：
 
 ```bash
-python3 demo_cli.py --bt auto                # 全平台（推荐）
-python3 demo_cli.py --bt AA:BB:CC:DD:EE:FF   # 显式地址
+python -m unittest discover -s tests -v
+python -m compileall -q edu_host
+python -m pip wheel --no-deps . -w dist
 ```
 
-Windows/Linux 的 RFCOMM 通道号默认 ctrl=6 / audio=5 / img=4，固件侧注册顺序
-固定所以通常不用动；连不上时可用 `--ctrl-channel` 等覆盖。macOS 走 SDP 动态
-查询，无需通道号。
+涉及收发行为的修改，按对应能力进行实机验证并记录实际覆盖范围；离线检查不能充当实机通过。
+构建和拆分不需要自动连接设备。SDK/demo拆分的迁移合同见[迁移说明](docs/MIGRATION.md)。
 
-## Agent 非交互调用模式（关键）
+## 协议与运行约束
 
-demo 是一个读 stdin 的 REPL，所以**用管道喂命令**即可脚本化。拍照/录音的结果
-是异步到达的，必须用 `wait <seconds>` 保活会话等结果落盘，再 `quit`：
+- `docs/PROTOCOL.md`是协议事实来源。同步字、CRC、UUID、通道号、命令与事件编号、990字节限制随固件对齐，host不可单方面更改。
+- `protocol.py`、`crc16.py`保持纯stdlib；macOS依赖延迟导入，Windows/Linux路径独立使用标准库socket。
+- macOS连接、请求、等待和关闭都在进程主线程顺序执行；每条原生RFCOMM通道由独立子进程的主run loop收发。
+  等待使用`wait()/poll()/events()`，事件回调应简短，设备请求排队到主循环。
+- 仅在该设备尚无其他通道打开时才允许重建ACL重试，避免误断已有连接。
+- 请求超时不代表设备未执行；拍照/录像等操作不得自动重发。按owner和生命周期处理连接、操作与LAN退出。
+- 与通话/充电/低电/OTA的冲突沿用设备保护规则，记录真实错误，不能用固定延时或跳过检查声称问题已修复。
 
-```bash
-# macOS / Linux
-printf 'info\nsensors\nquit\n' | python3 demo_cli.py --bt auto
-printf 'photo out.jpg\nwait 25\nquit\n' | python3 demo_cli.py --bt auto
-printf 'record start out.wav\nwait 10\nrecord stop\nquit\n' | python3 demo_cli.py --bt auto
-# 新存储拍摄/LAN 需新版 BT、公版 ISP；凭据只从本地文件读取，拍摄返回公版控制状态。
-printf 'video config\nvideo config --resolution 1080p --orientation portrait --max-duration 60\nphoto-save\nvideo start\nwait 5\nvideo stop\nmedia open /absolute/path/wifi.json\nmedia list\nmedia download all /absolute/path/captures\nmedia close\nquit\n' | python3 demo_cli.py --bt auto
-```
-
-```powershell
-# Windows PowerShell（数组逐元素成行）
-"info","sensors","quit" | python demo_cli.py --bt AA:BB:CC:DD:EE:FF
-"photo out.jpg","wait 25","quit" | python demo_cli.py --bt AA:BB:CC:DD:EE:FF
-```
-
-### 成功判定标志（grep 输出）
-
-| 任务 | 成功标志（stdout 行） |
-|---|---|
-| 连接/握手 | `connected! proto v1, firmware ...` |
-| 设备信息 | `firmware version : ...` / `battery level    : ...` |
-| 传感器 | `ALS (raw counts) : ...` |
-| 拍照 | `[photo] saved <path> (<N> bytes, group <G>)` |
-| 录音 | `stopped. <N> packages, <M> frames (~<S> s) ...` |
-| LAN 导出 | `[media] LAN ready`，逐项 `main_success=True complete=True`；伴随问题为 `complete=False`，检查 `errors` |
-| 事件 | `[event] BUTTON ...` / `[event] KNOB ...` |
-| OTA 升级 | `[ota] data ... (100.0%)` → `[ota] complete, reboot=1` |
-| 重启 | `reboot: status=OK ...`（随后连接断开属预期） |
-| LED/提示音 | `led: status=OK` / `tone: status=OK` |
-
-握手失败：Windows/Linux 输出 `handshake failed`；macOS 输出 `device not found`
-（未配对）、`EDU-CTRL service (0x2028) not found`（非教育固件）或直接异常退出。
-进程退出码 0 仅代表会话正常退出，**具体任务成败要看上面的标志行**。
-
-### 时长建议
-
-- 拍照：`wait 25`（ISP 冷启动最多 ~10 s + 传输数秒；`[photo] saved` 行出现即可）。
-- 录音：录 N 秒就 `wait N`，`record stop` 会自动结算。
-- 事件监听：`wait 30` 左右，期间提示用户按键/转旋钮。
-- OTA：`printf 'ota fw.bin\nquit\n' | ...`，`ota` 命令同步阻塞到完成（~1.8 MB
-  约一分钟）；`reboot=1` 后设备约 2 秒自动重启，重连后 `info` 核对新版本。
-  升级包由固件维护方提供，电量须 ≥20%。
-- 控制类：`printf 'led inner blink green fast\ntone click\nquit\n' | ...`；
-  `reboot` 后需等 ~30 s 重连。LED 手动设置可能被固件业务状态收回（尽力而为）。
-
-## 无硬件时的验证
-
-单元测试不需要眼镜、不需要蓝牙、不需要任何第三方依赖：
-
-```bash
-python3 -m unittest discover -s tests -v    # 58 tests，应全绿
-python3 -m py_compile demo_cli.py edu_host/*.py
-```
-
-任何代码改动后必须跑通全部单测。涉及连接/收发行为的改动，还应在真机上按
-上面的管道 recipe 做一次冒烟（至少 `info` + `photo` 或 `record`）。
-
-## 代码结构
-
-| 文件 | 职责 |
-|---|---|
-| `edu_host/protocol.py` | 帧编解码、枚举、air-img 切帧/JPEG 重组（**纯 stdlib**） |
-| `edu_host/crc16.py` | CRC-16/CCITT-FALSE |
-| `edu_host/client.py` | EduClient：握手、请求/响应配对、事件分发（线程版） |
-| `edu_host/session.py` | EduSession：统一连接/能力/命令/图片完成等待/录音/事件/OTA；Mac 主线程泵动 |
-| `edu_host/audio_client.py` | 0x52 音频包解析 + OPUS→WAV |
-| `edu_host/image_client.py` | EDU-IMG 接收线程 → JPEG 落盘 |
-| `edu_host/transport.py` | Transport 抽象 + 串口实现（pyserial 懒加载） |
-| `edu_host/bt_socket.py` | Windows/Linux 标准库 RFCOMM socket |
-| `edu_host/mac_bt.py` | macOS IOBluetooth（**主线程 run loop 模型**） |
-| `edu_host/bt_discovery.py` | Windows/Linux 已配对设备枚举（`--bt auto`） |
-| `edu_host/capture.py` / `catalog.py` / `wifi.py` / `media.py` | 公版拍摄控制、录像配置、SPP ID/元数据桥接、类型化配网及 LAN 导出；合同见 `docs/PROTOCOL.md` §3.1–3.3 |
-| `edu_host/ota_client.py` | OTA 升级客户端（0x2026，设备驱动的块传输） |
-| `demo_cli.py` | 共用 EduSession 的交互/管道 REPL；stdin 在线程读，设备收发由 SDK 处理 |
-| `examples/headset_demo.py` | A2DP/HFP 演示（sounddevice 按设备名收放音） |
-| `examples/notebooks/` | 教学 Jupyter（`edu_notebook.EduSession` 直接包装 SDK） |
-
-## 修改守则（不变量）
-
-1. **线协议常量不可单方面改**（同步字、帧类型、cmd/evt id、CRC 算法、UUID、
-   通道号、990 字节上限）：它们必须与眼镜固件一致。协议疑义以
-   `docs/PROTOCOL.md` 为准；文档与代码不符时先向维护者确认，不要"顺手修正"。
-2. **`edu_host/protocol.py` 与 `crc16.py` 保持纯 stdlib**，可无依赖单测。
-3. **macOS 路径的两条铁律**（改 `mac_bt.py` / mac 会话前必读其模块 docstring）：
-   IOBluetooth 回调只在**主线程** run loop 泵动时投递（必须 async open +
-   `pump()`，不能用 sync open、不能搬到后台线程）；首次 open 可能
-   `kIOReturnError`，按现有 ACL 重建逻辑重试。
-4. 线程会话（Windows/Linux/串口）里不要引入 pyobjc；mac 会话里不要引入
-   阻塞式 `input()`（会停掉 run loop）。
-5. 新增 REPL 命令要改共用 `run_session` + `HELP_TEXT` + README + 本文件的
-   recipe 表，并保持管道可用（无交互确认）。
-
-## 常见故障排查
-
-| 症状 | 处置 |
-|---|---|
-| `device not found`（mac auto） | 未配对，或设备名不以 `EDU-` 开头 → 系统设置里配对；或改用 `--bt <地址>` |
-| `handshake failed` | 连到了别的通道/设备 → 核对地址；Windows/Linux 试 `--ctrl-channel` 覆盖 |
-| mac 进程直接崩溃（SIGABRT） | 终端 App 无蓝牙权限 → 系统设置 → 隐私与安全性 → 蓝牙，勾选你的终端（Terminal/iTerm/IDE），然后**重开终端** |
-| mac `ImportError: ... objc` | `pip install pyobjc-core pyobjc-framework-IOBluetooth` |
-| mac `RFCOMM open failed` 反复出现 | 系统蓝牙开关关一下再开，或忘记设备重新配对 |
-| Windows 无 `AF_BTH` | 换 python.org 官方 Python；或走串口后备（README §2） |
-| 录音只出 `.opusraw` / 空 WAV | libopus 未装好（见"环境与安装"），原始帧仍可事后解码 |
-| `photo` 一直不落盘 | 看 `[event] IMG_STATE` 行：`ERROR/REMOTE_ERROR` 是相机侧失败，重拍；完全无事件则检查 img 通道 |
-| 眼镜连着别的 host | EDU-CTRL 单 host：先断开占用方 |
-
-## 学生二次开发指引
-
-- 用其他语言写自己的 host：照 `docs/PROTOCOL.md` 实现；用
-  `python3 -c "from edu_host.crc16 import crc16; print(hex(crc16(bytes.fromhex('0110010100'))))"`
-  之类生成 CRC 对拍向量；`tests/test_protocol.py` 里有现成的帧级测试样例可移植。
-- 用 Python 扩展：直接 import `edu_host` 包（见上表），不要复制粘贴协议常量。
-- 固件在眼镜端，本仓库改不了设备行为；需要新命令/事件时先与固件维护者对齐
-  协议版本与 caps 位。
+需要扩展线协议或对拍字节时阅读`.claude/skills/glasses-protocol-dev/SKILL.md`。

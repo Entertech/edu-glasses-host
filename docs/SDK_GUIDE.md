@@ -1,8 +1,8 @@
 # Looktech EDU 眼镜 Python SDK 使用说明
 
 本文面向需要在 PC 程序中调用眼镜能力的开发者，按当前 `feat/edu-sdk-integration`
-分支的 SDK 0.2.0 验证候选编写，更新于 2026-10-21。推荐从统一入口
-`edu_host.EduSession` 接入；CLI 和 Notebook 也使用这一入口。
+分支的 SDK 0.3.0 验证候选编写，更新于 2026-10-23。推荐从统一入口
+`edu_host.EduSession` 接入；独立[Demo仓库](https://github.com/Entertech/edu-glasses-demo)的CLI和Notebook也使用这一入口。
 
 ## 阅读导航
 
@@ -28,30 +28,31 @@ HELLO 用于协商版本和能力，不提供额外用户鉴权。
 
 ### 2. 安装 SDK
 
-要求 Python 3.9+。当前从集成分支源码安装，尚未发布到 PyPI：
+要求Python 3.9+。可直接在自己的项目虚拟环境内用pip安装SDK，无需复制源码或安装demo。
+当前从Git功能分支或wheel分发，尚未发布PyPI，不能仅用`pip install edu-glasses-host`安装当前候选。
 
 ```bash
-git clone --branch feat/edu-sdk-integration https://github.com/Entertech/edu-glasses-host.git
-cd edu-glasses-host
-python3 -m venv .venv
+python -m venv .venv
+# macOS/Linux：source .venv/bin/activate
+# Windows PowerShell：.\.venv\Scripts\Activate.ps1
+
+# Windows / Linux：蓝牙直连使用Python标准库
+python -m pip install "edu-glasses-host @ git+https://github.com/Entertech/edu-glasses-host.git@feat/edu-sdk-integration"
+
+# macOS：需要IOBluetooth绑定，使用这一条
+python -m pip install "edu-glasses-host[macos] @ git+https://github.com/Entertech/edu-glasses-host.git@feat/edu-sdk-integration"
 ```
 
-macOS/Linux 激活环境：`source .venv/bin/activate`；Windows PowerShell：
-`.\.venv\Scripts\Activate.ps1`。激活后按平台安装：
+应用的`requirements.txt`可填写同样的`edu-glasses-host @ git+https://...`依赖。
+Git安装需要本机有Git；建议把分支名替换为维护者验收过的完整commit SHA。
+维护者也可构建并提供wheel，业务项目通过`python -m pip install /path/to/edu_glasses_host-0.3.0-py3-none-any.whl`离线安装。
+SDK无必选运行依赖；源码开发仍支持在SDK仓库根目录`python -m pip install -e .`。
 
-```bash
-# Windows / Linux：蓝牙直连使用 Python 标准库
-python -m pip install -e .
-
-# macOS：需要 IOBluetooth 绑定，使用这一条
-python -m pip install -e '.[macos]'
-```
-
-| 可选功能 | 安装方式 | 说明 |
+| 可选功能 | extras | 说明 |
 |---|---|---|
-| OPUS 转 WAV | `python -m pip install -e '.[audio]'` | 还需系统 libopus；macOS 可用 `brew install opus`，Windows 需可加载的 64 位 `opus.dll` |
-| 虚拟串口后备连接 | `python -m pip install -e '.[serial]'` | 仅使用 `ctrl_port` 等参数时需要 |
-| 多项可选依赖 | `python -m pip install -e '.[macos,audio]'` | 可组合安装，不改变调用方式 |
+| OPUS转WAV | `[audio]` | 还需系统libopus；macOS可用`brew install opus`，Windows需可加载的64位`opus.dll` |
+| 虚拟串口后备连接 | `[serial]` | 仅使用`ctrl_port`等参数时需要 |
+| 多项可选依赖 | `[macos,audio]` | 将Git安装命令的包名改为`edu-glasses-host[macos,audio]`即可组合安装 |
 
 macOS 首次运行需允许终端或 Python 宿主访问蓝牙；Windows 建议使用 python.org 的
 CPython。若当前 Python 没有蓝牙 socket 支持，可改用虚拟串口后备连接。
@@ -332,7 +333,7 @@ except KeyboardInterrupt:
 后触发。以上约束针对 `EduSession`；直接使用旧底层 `EduClient` 时线程模型不同。
 
 参考 CLI 已提供完整拍摄映射：右侧 SINGLE 保存照片、LONG 开录像、录像中再次 PRESS
-停止，并处理去重及配对窗口。复用时参照 [`CaptureButtons`](../demo_cli.py)，不要把
+停止，并处理去重及配对窗口。复用时参照 [`CaptureButtons`](https://github.com/Entertech/edu-glasses-demo/blob/main/demo_cli.py)，不要把
 同步拍摄请求直接放进事件回调。demo 关闭或 SPP 断开后，EDU 不会在本地自动拍摄。
 
 ## WiFi 与媒体导出
@@ -573,9 +574,10 @@ ota=None, out_dir="captures")`；普通接入优先使用蓝牙地址或串口�
 
 ## CLI 与 Notebook
 
-安装后可运行 `edu-glasses --bt auto`，或在源码目录运行
-`python demo_cli.py --bt auto`。CLI 用于体验和诊断，应用开发直接调用 SDK，不解析 CLI
-打印文本。输入 `help` 查看命令；完整右侧按键映射见 [README](../README.md#cli-右侧按键拍摄)。
+SDK与demo已经分仓。先按[Demo仓库README](https://github.com/Entertech/edu-glasses-demo)安装demo，
+再运行`edu-glasses --bt auto`，或在demo源码目录运行`python demo_cli.py --bt auto`。
+只安装SDK不会注册CLI。CLI用于体验和诊断，应用开发直接调用SDK，不解析打印文本。
+输入`help`查看命令；完整右侧按键映射见[CLI使用说明](https://github.com/Entertech/edu-glasses-demo/blob/main/docs/CLI_GUIDE.md#cli-右侧按键拍摄)。
 
 | CLI 命令 | SDK 对应 |
 |---|---|
@@ -590,14 +592,15 @@ ota=None, out_dir="captures")`；普通接入优先使用蓝牙地址或串口�
 | `media download <id\|all> [directory]` / `media delete <id>` / `media close` | 下载、显式删除、退出 |
 | `led ...` / `tone ...` / `reboot` / `ota <firmware.bin>` | 对应控制接口 |
 
-教学 Notebook 位于 [`examples/notebooks/`](../examples/notebooks/)，包含图片分析、
-录音分析、实时传感器、旋钮事件及 [`05_wifi_media_export.ipynb`](../examples/notebooks/05_wifi_media_export.ipynb)。
+教学 Notebook 位于 [`examples/notebooks/`](https://github.com/Entertech/edu-glasses-demo/tree/main/examples/notebooks)，包含图片分析、
+录音分析、实时传感器、旋钮事件及 [`05_wifi_media_export.ipynb`](https://github.com/Entertech/edu-glasses-demo/blob/main/examples/notebooks/05_wifi_media_export.ipynb)。
 `edu_notebook.EduSession` 为教学薄包装：构造时自动连接，`sensors()` 返回字典、
 `events()` 返回带种类的二元组列表；普通应用优先用本文 `edu_host.EduSession`，避免
 混用两种返回值约定。Notebook 也应按顺序执行，结束后调用 `close()`。
 
 ## 验收范围与已知边界
 
+SDK/demo拆分不改变设备协议或能力行为，迁移方式见[拆分说明](MIGRATION.md)。
 当前文档覆盖SDK功能分支的录像配置扩展，BT功能基线 `9b1439a3`，ISP保持公版。协议仍为
 EDU v1，使用新增能力位发现存储拍摄和 LAN 扩展；旧固件缺少扩展时应明确拒绝。
 这些是功能分支验证候选，尚未合并两仓库 main 或形成正式发布版本。

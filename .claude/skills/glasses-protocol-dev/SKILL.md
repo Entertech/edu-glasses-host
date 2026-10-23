@@ -20,14 +20,14 @@ description: Develop a custom host implementation or extend this library against
 - macOS 蓝牙（`mac_bt.py`）两条铁律：IOBluetooth 回调只在**主线程 run loop**
   泵动时投递（async open + `pump()`，勿用 sync open / 后台线程）；首次 open 可能
   `kIOReturnError`，按现有 ACL 重建逻辑重试。
-- 新增 REPL 命令要同时改 `demo_cli.py` 的两个会话分支（threaded + mac）、
-  `HELP_TEXT`、README，并保持管道可脚本化（不引入交互确认）。
+- CLI在独立的`Entertech/edu-glasses-demo`仓库维护。新增SDK能力后，同步更新demo的
+  `run_session`、`HELP_TEXT`与README，保持macOS/线程路径共用和管道调用可用。
 
 ## 无硬件验证闭环
 
 ```bash
-python3 -m unittest discover -s tests -v     # 35+ 用例，全绿才算过
-python3 -m py_compile demo_cli.py edu_host/*.py
+python3 -m unittest discover -s tests -v     # SDK既有检查，全绿才算过
+python3 -m compileall -q edu_host
 ```
 
 `tests/test_protocol.py` 就是可执行的协议规格：写其他语言实现时，把里面的

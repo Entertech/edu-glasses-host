@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "edu-glasses-host"
-version = "0.2.0"
-description = "Python SDK and CLI for Looktech education glasses (EDU v1)"
+version = "0.3.0"
+description = "Python SDK for Looktech education glasses (EDU v1)"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []
@@ -15,11 +15,8 @@ serial = ["pyserial>=3.5"]
 audio = ["opuslib>=3.0.1"]
 macos = ["pyobjc-core>=10; sys_platform == 'darwin'", "pyobjc-framework-IOBluetooth>=10; sys_platform == 'darwin'"]
 
-[project.scripts]
-edu-glasses = "demo_cli:main"
-
 [tool.setuptools]
-py-modules = ["demo_cli"]
+py-modules = []
 
 [tool.setuptools.packages.find]
 include = ["edu_host*"]
