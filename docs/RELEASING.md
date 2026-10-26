@@ -101,3 +101,15 @@ python scripts/verify_wheels.py dist --version 0.5.0
 - 正式发布的 tag/版本门禁、源码混入拒绝及 sdist 禁用自检通过。
 - 本地阶段尚未运行远端 CI 或上传 PyPI；后续结果以 GitHub Actions 和 PyPI 发行记录为准。
   账号持有人已确认完成 Trusted Publisher 配置，仓库保持公开并继续发布。
+
+## 远端 CI 与发布（2026-10-26）
+
+- [仅构建 CI](https://github.com/Entertech/edu-glasses-host/actions/runs/40266685536) 全部成功。
+  下载并复核 30 个 wheel，覆盖 CPython 3.9–3.14 × 五种平台，包含完整扩展与类型声明，无实现源码。
+- `v0.5.0` 固定到 `1406c2c48f62378909d7c5b30b553e8377c30767`。
+- [正式发布 CI](https://github.com/Entertech/edu-glasses-host/actions/runs/40268128973) 在该 tag 再次构建并检查全部平台，
+  通过 Trusted Publishing 成功上传到 [PyPI 0.5.0](https://pypi.org/project/edu-glasses-host/0.5.0/)。
+- PyPI 元数据确认 30 个文件均为 wheel，没有 sdist。仓库按用户安排暂时保持 public。
+- 在干净 CPython 3.12 环境直接从 PyPI 安装 `[macos,audio,serial]` 成功，二进制导入/PyObjC 检查及既有 55 项检查通过。
+  demo 0.3.0 按正常依赖流程安装成功，既有 3 项检查、CLI 和三个调用示例的 help、`pip check` 均通过。
+  公开文档 22 段 Python 示例语法、本地链接和锚点检查通过。本轮未连接设备或重跑实机矩阵。
