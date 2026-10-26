@@ -47,10 +47,12 @@ class ImageClient:
 
     # -- lifecycle -----------------------------------------------------------
 
-    def start(self) -> None:
-        """Open the transport and start the background reader thread."""
+    def start(self, threaded: bool = True) -> None:
+        """Open and receive; with threaded=False the caller must call poll()."""
         self._transport.open()
         self._stop.clear()
+        if not threaded:
+            return
         self._reader = threading.Thread(target=self._reader_loop,
                                         name="edu-img-reader", daemon=True)
         self._reader.start()
@@ -79,21 +81,21 @@ class ImageClient:
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                data = self._transport.read(4096)
+                self.poll()
             except Exception as exc:  # port unplugged, BT dropped, ...
                 if not self._stop.is_set():
                     log.error("img transport read failed: %s", exc)
                 break
-            if not data:
-                continue
-            for sub in self._parser.feed(data):
-                before = self._reassembler.last_error
-                image = self._reassembler.feed_subframe(sub)
-                if self._reassembler.last_error != before:
-                    log.warning("image reassembly: %s",
-                                self._reassembler.last_error)
-                if image is not None:
-                    self._deliver(image)
+
+    def poll(self) -> None:
+        """Drain IMG once; also usable without a background reader."""
+        for sub in self._parser.feed(self._transport.read(4096)):
+            before = self._reassembler.last_error
+            image = self._reassembler.feed_subframe(sub)
+            if self._reassembler.last_error != before:
+                log.warning("image reassembly: %s", self._reassembler.last_error)
+            if image is not None:
+                self._deliver(image)
 
     def _deliver(self, image: CompletedImage) -> None:
         path = self._save_image(image)

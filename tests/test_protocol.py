@@ -8,12 +8,8 @@ Run from the edu_host/ directory with either:
 No hardware, pyserial or opuslib required.
 """
 
-import os
 import struct
-import sys
 import unittest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from edu_host.crc16 import crc16
 from edu_host import protocol

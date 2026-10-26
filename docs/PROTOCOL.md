@@ -51,7 +51,7 @@ def crc16(data: bytes) -> int:
 | 0x11 | RSP | 设备→host | `cmd_id(1) + status(1) + data`；seq 回显 CMD 的 seq |
 | 0x20 | EVT | 设备→host | `evt_id(1) + data` |
 
-图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件、bit4 控制（重启/LED/提示音）。
+图片不走本通道（见 §5）。caps 位：bit0 音频流、bit1 拍照、bit2 传感器、bit3 输入事件、bit4 控制（重启/LED/提示音）；bit5..7 扩展见 §3.1。
 
 ### status 码
 
@@ -88,6 +88,117 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 录音、29 短促点击（click）。无效编号返回 INVALID。完整可用值 0–29。
 
 
+### 3.1 存储拍摄与 LAN 导出扩展
+
+保留 v1、11B HELLO_ACK、990B 帧和旧命令。HELLO caps 新增 bit5 WIFI、bit6
+SAVED_PHOTO、bit7 VIDEO、bit8 MEDIA_CATALOG，bit9 VIDEO_CONFIG。bit8 标识本节的公版 ISP 桥接合同，
+新 SDK 在使用下列拍摄/媒体命令前要求它；不与此前未发布的精确发布原型混用。
+原 TAKE_PHOTO 为教学小图，AUDIO_START/STOP 为音频推流。ISP 固件、索引及路由不变。
+
+| cmd_id | 命令 | args | RSP data（外层 status=OK） |
+|---|---|---|---|
+| 0x20 | WIFI_EXECUTE | `operation u8 + operationArgs` | `operation u8 + kind u8 + outcome` |
+| 0x21 | SAVED_PHOTO | 无 | `operationId u32`，仅表示受理 |
+| 0x22 | VIDEO_START | 无 | `operationId u32`，仅表示受理 |
+| 0x23 | VIDEO_STOP | `operationId u32` | `operationId u32`，仅表示停止受理 |
+| 0x24 | MEDIA_STATUS | `operationId u32` | `operationId u32, kind u8, state u8, error u8`（7B） |
+| 0x25 | MEDIA_CAPS | 无 | `schemaVersion u8=1, catalogId u64, features u32`（13B） |
+| 0x26 | MEDIA_DESCRIPTOR | `catalogId u64, mediaId u64` | `catalogId u64, mediaId u64, revision u32, kind u8, size u64, nameLength u16, pathLength u16, name UTF-8, path UTF-8`（33B+字符串） |
+| 0x27 | MEDIA_IDS | `catalogId u64, cursor u64` | `catalogId u64, catalogRevision u64, nextCursor u64, hasMore u8, count u8, ids u64[count]`（26B+8N，N≤16） |
+
+多字节字段均 LE。operationId 由共享能力生成，只作 BT 本地控制与 owner 关联，
+不发送给 ISP，也不是媒体 ID。仅当前 CTRL owner 可查询/停止其操作；每种媒体保存最近
+一个操作状态。MEDIA_STATUS kind 为1照片、2视频；state 为1 STARTING、2 RECORDING、
+3 STOPPING、4 DONE、6 FAILED、7 UNKNOWN。DONE/RECORDING 是公版 ISP 控制状态，
+**不保证文件发布或首帧写入，也不返回本次唯一媒体 ID**。UNKNOWN/超时不能推断未保存
+或资源已释放，不自动重拍。后续通过独立 ID 列表选择媒体，不猜最近文件。
+
+MEDIA_CAPS 继承真实 ISP schema/catalog/features，使用公版 bit0 BATCH_METADATA、
+bit4 DB_CATALOG；不要求 ISP bit7/8，不依赖新增 UART 0x2B。ID 分页复用公版0x21，
+mask=3、includeDeleted=0，只列照片/视频。描述复用公版0x22的BASE字段，kind 1/2、
+revision非零、真实名称/路径/大小。桥接在每个查询前核对实际 CAPS/catalog，保留底层
+请求关联、分片、超时和 owner 取消。后端错误为外层ERROR＋1B公版错误码（如0x62不存在、
+0x68目录/游标失效），不能把查询失败伪装空列表。页游标是公版offset；列表不承诺原子快照。
+
+WIFI_EXECUTE 操作及参数：
+
+| operation | 含义 | operationArgs |
+|---|---|---|
+| 2 | CAPS | 无 |
+| 3 | SCAN | `offset u32`，首请求 0 |
+| 7 | CONNECT | `security u8, ssidLength u8, passwordLength u8, ssid, password` |
+| 8 | START_MEDIA | 无 |
+| 9 | STATUS | 无 |
+| 10 | DISCONNECT | 无 |
+
+SSID 为 1..32 个 UTF-8 字节，密码最多64字节，均不含 NUL；不记录原始配网帧。
+security：0 不支持、1 OPEN、2 WEP、3 WEP_SHARED、4 WPA、5 WPA2、6 WPA3。
+CAPS 返回真实支持的位图；OPEN 无密码，WEP/WEP_SHARED 长度为5/10/13/26，WPA
+类由后端继续校验。kind 与 outcome：
+
+| kind | outcome |
+|---|---|
+| 0 CAPS | `version u32, securityMask u8`（bitN 对应 security=N） |
+| 1 SCAN | `complete u8, nextOffset u32, hasMore u8, count u8`；接 count 项，每项 `ssidLength u8, ssid, channel u32, rssi i32, security u8`，count≤5 |
+| 2 STATUS | `stage u8, failure u8, catalogId u64, port u16, ipv4[16], ssidLength u8, ssid, security u8`；ipv4 为 NUL 填充数值 IPv4 |
+| 3 DONE | 无；CONNECT/START_MEDIA/DISCONNECT 的受理结果 |
+| 4 ERROR | `error u8` |
+
+CONNECT/START_MEDIA 的 DONE 不是入网/服务就绪。继续 STATUS，stage 为0 IDLE、1
+SCANNING、2 CONNECTING、3 DHCP、5 CONNECTED、6 SERVING、7 STOPPING、8 FAILED。
+仅 SERVING 且实际 IPv4、port、非零 catalogId 齐备时开始 HTTP。STOPPING 保留 owner，
+直到真实停止确认。外层 OK 仅表示 WiFi 结果已映射，kind4 或 stage8 仍为业务失败。
+WiFi error：1 unsupported、2 invalid、3 busy、4 scan、5 auth、6 connection、7 DHCP、
+8 storage、10 not-found、11 stale、12 HTTP、13 timeout、14 cancelled、15 protected。
+
+### 3.2 HTTP 与媒体身份
+
+SDK 主媒体身份只来自SPP的真实ID/BASE查询。公版 HTTP `GET /` 可能因无ID文件退回
+legacy目录，不影响SPP索引查询；不新增 `/media/catalog` 路由，不允许路径身份回退。
+SDK 开启LAN后固定实际endpoint/catalog，只接受照片/视频ID，下载前后重核描述。
+
+公版BASE没有gyro关系。若 `GET /` 返回已索引JSON，SDK仅在catalog、主ID、revision和
+文件描述一致时按 `parentMediaId`/`metadataRevision` 采用已登记伴随文件；若为legacy，
+视频 `companions_known=False`，保留可用MP4且 `complete=False`，报告无法确认伴随关系。
+不按同名文件推断。已知 `motionRequired=true` 而gyro缺失/下载失败也报告不完整。
+
+文件使用经验证的 `/customer/bt_res/{image,video,gsensor}/文件名`，直连实际数值IPv4，
+不使用代理/重定向；整文件GET 200，无Range或内容hash保证。状态、Content-Length和实际
+字节数匹配条目大小后提交本地文件；默认不覆盖、不删除设备原件。每文件最多3次整文件
+尝试，批量固定选择并逐项返回，CTRL失效或取消终止所属会话。
+
+`DELETE /media?id=<真实ID>` 独立显式发起，范围沿用公版登记关联文件。200成功、404已不存在、
+其他错误如实报告，不保证事务原子性。SDK不提供路径删除，不操作音频/无ID文件。
+LAN继承公版可读可删边界，不增加PC token。上下文交互空档约30秒GET /保活；关闭或CTRL
+失效清理所属HTTP/STA，停止未确认保留hold。macOS所有SPP调用在调用线程，HTTP工作线程
+运行期间调用线程继续poll；不会从HTTP线程发蓝牙命令。
+
+### 3.3 录像配置扩展
+
+HELLO bit9 VIDEO_CONFIG 单独标识本扩展；保持v1、旧命令、11B HELLO_ACK及990B帧不变。
+
+| cmd_id | 命令 | args | RSP data（status=OK） |
+|---|---|---|---|
+| 0x28 | GET_VIDEO_CONFIG | 无 | 9B配置，见下 |
+| 0x29 | SET_VIDEO_CONFIG | `mask u8, resolution u8, orientation u8, max_duration_s u32`（7B） | 同上，仅表示保存及同步请求已受理 |
+
+mask的bit0选择分辨率、bit1方向、bit2时长，仅允许1..7。resolution：0=2K、1=1080P；
+orientation：0=landscape、1=portrait；时长仅30/60/180秒。未选择字段忽略并保留设备现值；
+保留enable_eis。所有字段先校验，再持久保存；拍照、录像及LAN导入忙碌时SET返回BUSY。
+不更改公版RPC已有时长取值兼容性，不更改ISP协议或KV布局。
+
+配置响应依次为：保存的resolution u8、orientation u8、max_duration_s u32，最新请求的
+requested_resolution u8、requested_orientation u8、sync_state u8。state：0 UNCONFIRMED、
+1 PENDING、2 APPLIED。APPLIED仅指profile已通过既有ISP回读确认，且没有在途请求/对账；
+ISP断电或尚未确认不能报APPLIED。时长是BT保存值，下次录像传给ISP，不宣称已由ISP回读。
+保存值和最新请求值可能不同，不能把SET的OK当作已生效。配置是设备级的，CTRL断开后已受理
+同步继续，不将配置变成录像operation；owner仍检查当前控制连接是否有效。
+
+SDK get_video_config()读取快照；set_video_config仅修改提供的关键字字段，涉及profile时
+默认等到APPLIED并匹配目标。仅改时长时保存后返回，profile状态仍如实表达。超时不重发，
+调用者可继续GET查询；新请求覆盖或ISP拒绝导致目标不匹配时明确失败。缺bit9的旧固件明确不支持。
+
+
 ## 4. 事件（EVT）
 
 | evt_id | 事件 | data |
@@ -114,7 +225,10 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 | 10 | 超长按抬起 | 22 | 上滑 |
 | 11 | 超超长按 | 23 | 下滑 |
 
-按键本地行为（音量/媒体/通话控制）保留，事件为旁路转发；拍照键不再本地拍照。
+按键原始事件为旁路转发；声明 NATIVE_INPUT 时启用本地拍照、录像和录音请求，见文末原生输入扩展。
+参考 CLI demo 在 PC 端将 CAPTURE 的 SINGLE 映射到存储拍照、LONG 映射到录像启动，
+录像中再次 PRESS 映射到停止；灯效由共享固件拍摄能力处理。这是 demo 行为，不改变
+事件协议，普通 SDK/Notebook 的事件监听没有自动拍摄副作用。
 
 ## 5. 图片传输（EDU-IMG 通道，UUID 0x2025）
 
@@ -174,6 +288,48 @@ N/2 秒且内容不可辨。
 本仓库即参考实现：`edu_host/` Python 包（蓝牙 socket / IOBluetooth / 串口三种
 transport、协议编解码、音频解码存 wav、图片重组存 jpg、OTA SPP 升级）+
 `demo_cli.py` 交互式 demo + `tests/` 单元测试。环境配置见仓库根 README。
+SDK 入口为 `edu_host.EduSession`；CLI 和 Notebook 复用它，不另行编码线协议。
+实现沿用 `EduClient`、音频解析/sink、图片重组/写盘和 OTA 客户端；macOS 由
+主线程轮询同一套解析器，底层每条原生通道在独立子进程的主线程接收，再经私有管道
+交给解析器，规避 macOS 27 同进程多通道关闭路由串线；close 等待回收子进程，
+重建 ACL 仅允许发生在同设备没有其他已打开通道时。其余 transport 使用接收线程。
+这些字节转发不引入新的蓝牙协议或公开 SDK 参数。能力检查读取 HELLO_ACK
+的 caps，旧固件未声明的能力明确报错；拍照以完整文件落盘为完成条件，录音缺
+解码器时保存 `.opusraw`，不能将空 WAV 视为录制成功。这些是 host 实现决策，
+不改变本规格的协议、设备能力与固件产物版本。
 升级命令：`ota <firmware.bin>`（升级包由固件维护方提供）；macOS `--bt auto`
 路径通过 SDP 查找 0x2026，Windows/Linux `--bt` 默认 OTA RFCOMM channel 为 7，
 可用 `--ota-channel` 覆盖。
+
+## 原生输入与设备拍摄观察（SDK 0.4.0）
+
+HELLO 新增 bit10 `NATIVE_INPUT`、bit11 `DEVICE_CAPTURE_STATE`。v1 帧、11B HELLO_ACK、已有命令及 BUTTON/KNOB payload 不变。
+
+| 编号 | 方向 | 名称 | 数据 |
+|---|---|---|---|
+| `0x2A` | CMD | GET_CAPTURE_STATE | 无参数；成功 RSP data 为下述 8B 快照 |
+| `0x05` | EVT | CAPTURE_STATE | 同一份 8B 快照 |
+| `0x06` | EVT | AUDIO_RECORD_REQUEST | action u8：0 停止/完成 PC 文件，1 请求 PC 准备接收再调用 AUDIO_START |
+
+快照仅观察存储照片和视频；教学小图继续使用 IMG_STATE，不写入该快照。
+快照按照片、视频顺序排列，每项为 `kind u8, source u8, state u8, error u8`。
+kind=1 PHOTO / 2 VIDEO；source=0 NONE / 1 LOCAL / 2 APP / 3 AI / 4 EDU；
+state=0 IDLE / 1 STARTING / 2 RECORDING / 3 STOPPING / 4 DONE / 6 FAILED / 7 UNKNOWN。
+无操作时 source/state/error 均为0；每类保留最新操作终态，重启归零。它只表示 BT 控制状态，
+不含 operation、媒体 ID 或文件已发布的承诺，也不授予停止权。事件可能在断连时丢失，重连主动查询。
+
+`NATIVE_INPUT` 表示构建开启原生拍照/录像/录音键。按键照片和录像 owner 为 LOCAL，
+不依赖 CTRL；物理键可停止 SDK 录像。PC 发起操作继续属于当前 EDU 会话，断连清理，
+SDK 不能用设备快照接管本地或其他会话的 operation。媒体、通话与旋钮音量使用既有公版分发。
+三击后长按配对优先；照片/视频灯效、提示音、配置及电量/充电/繁忙保护使用共享业务流程。
+录音维持原 EDU 接收流的重试、允许充电采集及静音提示策略。
+
+录音双击动作仍受公版双击配置约束；开始事件只是意图，固件此时不开麦。
+接收程序准备好文件后调用既有 AUDIO_START，实际流属于该 PC 会话；无 PC 不提供离线录音。
+物理键停止录音在固件共用停止入口完成，停止事件仅发送给该流所属的当前 PC；旧会话清理不通知新会话。
+SDK 订阅事件不自动开始录音。
+AI/翻译完整业务需要 PC 服务实现，本次不提供该服务。
+
+先升级 SDK/demo 再更新原生输入固件。新版 demo 在 `NATIVE_INPUT` 存在时不再把原始拍摄事件
+转为拍照/录像命令；旧固件仍使用旧映射。旧 demo 无此识别，可能重复拍摄，须升级或移除旧映射。
+`CONFIG_LT_EDU_NATIVE_INPUT=n` 可构建回原先 EDU 拍摄按键模式；设备状态查询仍可用。

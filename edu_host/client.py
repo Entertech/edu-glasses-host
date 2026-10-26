@@ -11,14 +11,16 @@ Responsibilities:
 Images do not travel on this channel: connect the separate air-img SPP
 channel (UUID 0x2025) with :class:`edu_host.image_client.ImageClient`.
 
-A single background thread reads from the transport and parses frames; all
-callbacks run on that thread, so keep them quick.
+By default a background thread reads and dispatches callbacks. With an explicit
+``pump`` callback, requests drive it on the caller's thread; the pump must call
+``poll()`` to drain the channel. This supports macOS's main-thread run loop.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
@@ -73,8 +75,10 @@ class _Pending:
 class EduClient:
     """Host client for the EDU-CTRL SPP channel (UUID 0x2028)."""
 
-    def __init__(self, transport: Transport) -> None:
+    def __init__(self, transport: Transport,
+                 pump: Optional[Callable[[float], None]] = None) -> None:
         self._transport = transport
+        self._pump = pump
         self._parser = FrameParser()
 
         self._seq = 0
@@ -90,9 +94,11 @@ class EduClient:
     # -- lifecycle -----------------------------------------------------------
 
     def start(self) -> None:
-        """Open the transport and start the background reader thread."""
+        """Open the transport; start a reader unless a pump was supplied."""
         self._transport.open()
         self._stop.clear()
+        if self._pump is not None:
+            return  # IOBluetooth is polled on the calling main thread.
         self._reader = threading.Thread(target=self._reader_loop,
                                         name="edu-ctrl-reader", daemon=True)
         self._reader.start()
@@ -104,6 +110,11 @@ class EduClient:
             self._reader.join(timeout=2.0)
             self._reader = None
         self._transport.close()
+
+    @property
+    def is_open(self) -> bool:
+        return (not self._stop.is_set() and not getattr(self._transport, 'closed', False)
+                and getattr(self._transport, 'is_open', True))
 
     # -- callbacks -----------------------------------------------------------
 
@@ -209,7 +220,13 @@ class EduClient:
             self._pending[seq] = pending
         try:
             self._transport.write(encode_frame(send_type, seq, payload))
-            if not pending.event.wait(timeout):
+            if self._pump is not None:
+                deadline = time.monotonic() + timeout
+                while not pending.event.is_set() and time.monotonic() < deadline:
+                    self._pump(min(0.05, max(0.0, deadline - time.monotonic())))
+            else:
+                pending.event.wait(timeout)
+            if not pending.event.is_set():
                 raise EduTimeoutError(
                     "no answer for frame type 0x%02X seq %d within %.1fs "
                     "(is this really the EDU-CTRL port?)"
@@ -223,19 +240,20 @@ class EduClient:
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                data = self._transport.read(4096)
+                self.poll()
             except Exception as exc:  # port unplugged, BT dropped, ...
                 if not self._stop.is_set():
                     log.error("transport read failed: %s", exc)
+                self._stop.set()
                 break
-            if not data:
-                continue
-            for frame in self._parser.feed(data):
-                try:
-                    self._handle_frame(frame)
-                except Exception:
-                    log.exception("error handling frame type 0x%02X",
-                                  frame.type)
+
+    def poll(self) -> None:
+        """Drain CTRL once; called by the reader or a main-thread pump."""
+        for frame in self._parser.feed(self._transport.read(4096)):
+            try:
+                self._handle_frame(frame)
+            except Exception:
+                log.exception("error handling frame type 0x%02X", frame.type)
 
     def _handle_frame(self, frame: Frame) -> None:
         if frame.type in (FrameType.HELLO_ACK, FrameType.RSP):

@@ -177,7 +177,9 @@ class OTAFirmwareImage:
         product_id, version, file_len = struct.unpack_from("<QQI", data, 0)
         module_count = data[20]
         if module_count <= 0 or module_count >= 4:
-            raise ValueError("invalid module_count: %d" % module_count)
+            raise ValueError("invalid module_count: %d; expected a Looktech OTA "
+                             "bundle, not a WPK or raw wqota Bluetooth package"
+                             % module_count)
 
         header_size = 32 + module_count * 32
         header_info_len = header_size + 8

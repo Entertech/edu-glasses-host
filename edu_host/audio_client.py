@@ -278,6 +278,7 @@ class AudioStats:
     decode_errors: int = 0
     output_path: Optional[Path] = None
     decoded_to_wav: bool = False
+    frames_written: int = 0
 
     @property
     def seconds(self) -> float:
@@ -302,20 +303,22 @@ class AudioStreamClient:
         self._stats = AudioStats()
         self._last_sn: Optional[int] = None
         self._reader: Optional[threading.Thread] = None
+        self._manual = False
         self._stop = threading.Event()
 
     @property
     def is_running(self) -> bool:
-        return self._reader is not None and self._reader.is_alive()
+        return self._manual or (self._reader is not None and self._reader.is_alive())
 
     @property
     def stats(self) -> AudioStats:
         return self._stats
 
-    def start(self, wav_path: Path) -> Path:
+    def start(self, wav_path: Path, threaded: bool = True) -> Path:
         """Open the audio port and start capturing into *wav_path*.
 
         Returns the actual output path (may be ``.opusraw`` on fallback).
+        With threaded=False the caller must call poll() to receive frames.
         """
         if self.is_running:
             raise RuntimeError("audio capture already running")
@@ -324,24 +327,40 @@ class AudioStreamClient:
                                  decoded_to_wav=decoded)
         self._last_sn = None
         self._parser = RecordStreamParser()
-        self._transport.open()
+        try:
+            self._transport.open()
+        except Exception:
+            try:
+                self._transport.close()
+            finally:
+                self._sink.close()
+                self._sink = None
+            raise
         self._stop.clear()
+        self._manual = not threaded
+        if self._manual:
+            return self._sink.path
         self._reader = threading.Thread(target=self._reader_loop,
                                         name="edu-audio-reader", daemon=True)
         self._reader.start()
         return self._sink.path
 
-    def stop(self) -> AudioStats:
-        """Stop capturing, close the port and finalize the output file."""
+    def stop(self, close_transport: bool = True) -> AudioStats:
+        """Finalize capture, optionally keeping a main-thread channel open."""
         self._stop.set()
+        self._manual = False
         if self._reader is not None:
             self._reader.join(timeout=2.0)
             self._reader = None
-        self._transport.close()
-        if self._sink is not None:
-            self._stats.decode_errors = self._sink.decode_errors
-            self._sink.close()
-            self._sink = None
+        try:
+            if close_transport:
+                self._transport.close()
+        finally:
+            if self._sink is not None:
+                self._stats.decode_errors = self._sink.decode_errors
+                self._stats.frames_written = self._sink.frames_decoded
+                self._sink.close()
+                self._sink = None
         return self._stats
 
     # -- internals -----------------------------------------------------------
@@ -349,15 +368,19 @@ class AudioStreamClient:
     def _reader_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                data = self._transport.read(4096)
+                self.poll()
             except Exception as exc:
                 if not self._stop.is_set():
                     log.error("audio transport read failed: %s", exc)
                 break
-            if not data:
-                continue
-            for package in self._parser.feed(data):
-                self._handle_package(package)
+
+    def poll(self) -> None:
+        """Drain AUDIO once using the same parser and sink on every platform."""
+        data = self._transport.read(4096)
+        if self._sink is None:
+            return  # Discard late packets between recording sessions.
+        for package in self._parser.feed(data):
+            self._handle_package(package)
 
     def _handle_package(self, package: RecordPackage) -> None:
         self._check_sn(package)
