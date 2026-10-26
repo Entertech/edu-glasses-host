@@ -2,9 +2,9 @@
 
 ## 0.5.0：二进制发行（2026-10-26）
 
-SDK 实现仓库改为内部维护；公开 demo 和文档继续位于 `Entertech/edu-glasses-demo`。
+SDK 实现与 demo 分仓维护；当前 SDK 仓库暂时保持公开，demo 和文档位于 `Entertech/edu-glasses-demo`。
 将原 Git commit 依赖替换为 `edu-glasses-host==0.5.0`，macOS 使用 `[macos]`。
-首次发布完成后可从 PyPI 安装，无需源码仓库权限。仅提供标准 CPython 的平台 wheel，
+已发布到 PyPI，安装无需源码仓库权限。仅提供标准 CPython 的平台 wheel，
 保留 `edu_host` 导入、`EduSession`、全部原有低层 API 和 extras；wheel 含 `.pyi` 类型声明，
 不含实现 `.py`、生成的 C 或 sdist。完整平台和维护步骤见 [RELEASING.md](RELEASING.md)。
 Cython 兼容处理将一处字节切片解包改为等价 `struct.unpack_from`，线协议和完成语义不变。

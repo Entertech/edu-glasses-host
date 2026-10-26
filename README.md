@@ -9,7 +9,7 @@
 
 ## 安装
 
-0.5.0 改用 Cython 二进制 wheel 分发。首次 PyPI 发布完成后，在自己的项目安装：
+[SDK 0.5.0 已发布到 PyPI](https://pypi.org/project/edu-glasses-host/0.5.0/)，使用 Cython 二进制 wheel 分发。在自己的项目安装：
 
 ```bash
 python -m pip install --only-binary=edu-glasses-host "edu-glasses-host==0.5.0"
