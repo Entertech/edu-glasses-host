@@ -1,4 +1,4 @@
-"""Validate the requested version and restrict real publication to private, tagged source."""
+"""Validate the requested version and restrict real publication to tagged source."""
 
 import ast
 import os
@@ -17,5 +17,4 @@ assert versions == [requested], 'SDK __version__ differs from project version'
 if os.environ.get('PUBLISH') == 'true':
     assert os.environ.get('GITHUB_REF_TYPE') == 'tag', 'Publish from a version tag'
     assert os.environ.get('GITHUB_REF_NAME') == 'v' + requested, 'Tag must be v<version>'
-    assert os.environ.get('SDK_REPOSITORY_PRIVATE') == 'true', 'Make SDK source repository private first'
 print('Release preflight passed:', requested)

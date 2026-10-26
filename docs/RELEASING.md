@@ -1,6 +1,6 @@
 # SDK 二进制发布（0.5.0）
 
-发行目标：SDK 源码在 `Entertech/edu-glasses-host` 内部维护；demo、使用说明和 API 参考在
+SDK 源码在 `Entertech/edu-glasses-host` 独立维护；demo、使用说明和 API 参考在
 [公开 demo 仓库](https://github.com/Entertech/edu-glasses-demo)维护。
 发布 Cython wheel，保留 `edu_host` 公共接口、低层 API、extras 与类型提示。禁用 sdist，
 构建门禁拒绝 `.py/.pyx/.c` 等实现源文件。二进制仍可被逆向分析，Cython 不提供加密或绝对源码保护。
@@ -21,10 +21,9 @@
 
    Workflow 只填文件名，不填 `.github/workflows/`。首次成功上传时创建项目，不必先手动上传包；
    pending publisher 不预留项目名，若名字被占用需先解决项目归属。后续使用同一 publisher 发布。
-3. 由 GitHub 仓库 Admin/组织 Owner 将 SDK 仓库设为 **private**；demo 保持 **public**。
-   2026-10-26 核验：登录账号 `xdpan1234` 对 SDK 只有 Maintain 权限，不能执行可见性修改。
-   路径：SDK 仓库 Settings → General → Danger Zone → Change repository visibility。
-   过去已公开的 Git 历史可能已有克隆或缓存，改 private 无法收回这些副本。
+3. 2026-10-26 用户确认：SDK 仓库暂时保持 **public**，不再将 private 作为发布前提；demo 继续公开。
+   PyPI 仍只发布二进制 wheel，不上传实现源码。将来有条件时可由管理员修改仓库可见性；
+   已公开的 Git 历史可能已有克隆或缓存，改 private 无法收回这些副本。
 4. 将 workflow 合并到 SDK 默认分支 `main`，由有权限者在 Settings → Environments 创建/确认 `pypi`。
    可设置环境 required reviewers 和只允许版本 tag 的部署规则（视 GitHub 计划支持），防止误发布。
    仓库/组织 Actions 策略须允许使用本 workflow 固定的 GitHub/PyPA actions。
@@ -36,7 +35,7 @@
 
 ## 日常手动发布
 
-首次落地顺序：SDK 仓库改 private → 推送并将 workflow 合入 main → CI 仅构建验证 →
+首次落地顺序：推送并将 workflow 合入 main → CI 仅构建验证 →
 tag 发布到 PyPI → 干净环境安装确认 → 合入 demo 的 PyPI 依赖切换。
 PyPI 发布前将 demo 切换保留在候选分支，避免默认分支安装依赖尚不存在的版本。
 
@@ -55,7 +54,7 @@ PyPI 发布前将 demo 切换保留在候选分支，避免默认分支安装依
    gh workflow run publish-pypi.yml --repo Entertech/edu-glasses-host --ref v0.5.0 -f version=0.5.0 -f publish=true
    ```
 
-   正式发布要求版本/tag 完全匹配、SDK 仓库 private、全部构建成功；再由 `pypi` 环境发布。
+   正式发布要求版本/tag 完全匹配、全部构建成功；再由 `pypi` 环境发布。
    仅 publish job 拥有 `id-token: write`。上传只读取经审计的 wheel，不上传 sdist 或构建源码。
 5. 从干净环境通过 PyPI 安装，并检查 `from edu_host import EduSession`、demo 启动与版本。
    PyPI 相同版本文件不可覆盖；失败先核实已上传文件，修复后通常提升版本，不能依赖跳过重复文件掩盖部分发布。
@@ -99,6 +98,6 @@ python scripts/verify_wheels.py dist --version 0.5.0
   去掉既有测试中的源码路径注入，确认检查实际导入已安装扩展；未新增单元测试。
 - demo 独立安装、现有 3 项 CLI 检查、命令/三个新调用示例的 help、参数拒绝及依赖检查通过。
   文档 Python 示例语法和本地链接检查通过；未连接设备。
-- 正式发布的 tag/版本/private 门禁、源码混入拒绝及 sdist 禁用自检通过。
-- 尚未推送/运行远端 CI 或上传 PyPI；SDK 仍公开，需管理员改为 private，账号持有人完成 PyPI publisher 配置。
-  Windows、Linux、macOS Intel 及其余 Python 版本等待 CI 验证。
+- 正式发布的 tag/版本门禁、源码混入拒绝及 sdist 禁用自检通过。
+- 本地阶段尚未运行远端 CI 或上传 PyPI；后续结果以 GitHub Actions 和 PyPI 发行记录为准。
+  账号持有人已确认完成 Trusted Publisher 配置，仓库保持公开并继续发布。

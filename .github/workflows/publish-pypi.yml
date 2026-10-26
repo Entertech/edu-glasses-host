@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       publish:
-        description: Publish to PyPI (requires matching version tag and private SDK repository)
+        description: Publish to PyPI (requires matching version tag and all checks to pass)
         default: false
         type: boolean
 
@@ -31,7 +31,6 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           PUBLISH: ${{ inputs.publish }}
-          SDK_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
 
   build:
     needs: validate
