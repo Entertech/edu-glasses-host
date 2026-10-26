@@ -19,7 +19,8 @@ python -m pip wheel --no-deps . -w dist
 ```
 
 涉及收发行为的修改，按对应能力进行实机验证并记录实际覆盖范围；离线检查不能充当实机通过。
-构建和拆分不需要自动连接设备。SDK/demo拆分的迁移合同见[迁移说明](docs/MIGRATION.md)。
+构建和拆分不需要自动连接设备。打包或发布时读取[发布流程](docs/RELEASING.md)，
+SDK/demo拆分的迁移合同见[迁移说明](docs/MIGRATION.md)。
 
 ## 协议与运行约束
 

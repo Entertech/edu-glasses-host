@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77", "wheel", "Cython>=3.1,<4", "mypy>=1.13,<3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "edu-glasses-host"
-version = "0.4.0"
+version = "0.5.0"
 description = "Python SDK for Looktech education glasses (EDU v1)"
 readme = "README.md"
+license = "LicenseRef-Proprietary"
 requires-python = ">=3.9"
 dependencies = []
 
@@ -17,6 +18,20 @@ macos = ["pyobjc-core>=10; sys_platform == 'darwin'", "pyobjc-framework-IOBlueto
 
 [tool.setuptools]
 py-modules = []
+include-package-data = false
 
 [tool.setuptools.packages.find]
 include = ["edu_host*"]
+
+[tool.cibuildwheel]
+build = "cp3{9,10,11,12,13,14}-*"
+skip = "*-musllinux* *-win32 *-manylinux_i686"
+test-command = "python {project}/scripts/verify_installed.py && python -m unittest discover -s {project}/tests -v"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+
+[tool.cibuildwheel.macos]
+test-extras = ["macos"]
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }

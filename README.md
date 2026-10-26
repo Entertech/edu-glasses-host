@@ -1,40 +1,32 @@
 # Looktech EDU 眼镜 Python SDK
 
-通过经典蓝牙SPP调用EDU眼镜的设备信息、传感器、拍照、录像、麦克风、按键事件、
-设备控制、OTA和WiFi媒体导出能力。应用统一从 `edu_host.EduSession` 接入。
+通过经典蓝牙 SPP 调用 EDU 眼镜的设备信息、传感器、拍照、录像、麦克风、事件、
+设备控制、OTA 和 WiFi 媒体导出能力。统一从 `edu_host.EduSession` 接入。
 
-- [SDK使用说明与API速查](docs/SDK_GUIDE.md)
-- [EDU通信协议](docs/PROTOCOL.md)
-- [独立Demo仓库](https://github.com/Entertech/edu-glasses-demo)：CLI、按键拍摄、Notebook和耳机示例
-- [0.3.0拆分迁移说明](docs/MIGRATION.md)
+- [外部开发者指南](https://github.com/Entertech/edu-glasses-demo/blob/main/docs/SDK_GUIDE.md)
+- [API 参考](https://github.com/Entertech/edu-glasses-demo/blob/main/docs/API_REFERENCE.md)
+- [公开 Demo、CLI 和 Notebook](https://github.com/Entertech/edu-glasses-demo)
 
-## 在自己的项目中安装
+## 安装
 
-Python 3.9+。SDK可通过pip从Git安装，无需复制SDK源码或下载demo。
-当前0.4.0是功能分支候选，尚未发布到PyPI；`pip install edu-glasses-host`不能作为当前版本的安装方式。
-Git安装需要本机有Git，源码见 `feat/edu-sdk-integration`，尚未合并main。
+0.5.0 改用 Cython 二进制 wheel 分发。首次 PyPI 发布完成后，在自己的项目安装：
 
 ```bash
-python -m venv .venv
-# macOS/Linux：source .venv/bin/activate
-# Windows PowerShell：.\.venv\Scripts\Activate.ps1
-
-# Windows/Linux，标准库蓝牙socket，无必选运行依赖
-python -m pip install "edu-glasses-host @ git+https://github.com/Entertech/edu-glasses-host.git@feat/edu-sdk-integration"
-
-# macOS，需要IOBluetooth绑定，使用这一条
-python -m pip install "edu-glasses-host[macos] @ git+https://github.com/Entertech/edu-glasses-host.git@feat/edu-sdk-integration"
+python -m pip install --only-binary=edu-glasses-host "edu-glasses-host==0.5.0"
+# macOS 使用这一条
+python -m pip install --only-binary=edu-glasses-host "edu-glasses-host[macos]==0.5.0"
 ```
 
-可选extras：`audio`安装OPUS解码依赖，`serial`安装串口依赖，`macos,audio`等可组合。
-WAV解码还需要系统libopus；缺失时录音保留`.opusraw`，详见SDK使用说明。
-离线分发可由维护者构建wheel：`python -m pip wheel --no-deps . -w dist`，再安装该`.whl`。
-业务项目的`requirements.txt`可写入上面的`edu-glasses-host @ git+https://...`依赖，
-建议把分支名替换为验收过的完整commit SHA，保证环境可复现。
+支持标准 CPython 3.9–3.14：Windows x64、macOS 11+ Intel/Apple Silicon、Linux glibc 2.17+ x64/ARM64。
+各 Python 版本和依赖可能提高系统最低版本，以实际 wheel 和安装器要求为准。
+PyPy、free-threaded Python、Windows ARM64、32 位和 Alpine/musl 暂未提供 wheel。
+外部开发者无需 SDK 仓库权限、Git 或编译器；发行包包含二进制扩展、类型声明与包元数据。
+`audio`、`serial`、`macos` extras 按需组合，例如 `[macos,audio]`。
+WAV 解码另需系统 libopus；缺少时录音保留 `.opusraw`。
 
 ## 第一个程序
 
-先在系统蓝牙设置配对已烧录EDU固件的眼镜，再运行：
+先安装 EDU 固件，在系统蓝牙设置配对眼镜，然后：
 
 ```python
 from edu_host import EduSession
@@ -46,46 +38,12 @@ with EduSession(bt="auto") as glasses:
         print(glasses.sensors())
 ```
 
-多台设备配对时使用明确地址 `EduSession(bt="AA:BB:CC:DD:EE:FF")`。
-macOS的连接、请求、等待和关闭在主线程顺序执行；等待时用`wait()`或`poll()`保持收包。
-回调应简短，设备请求排队到主循环处理。退出时通过`with`或`close()`释放连接。
+多台设备时指定明确地址。macOS 的连接、请求、等待和关闭在主线程顺序执行；
+等待使用 `wait()` 或 `poll()` 保持收包，事件回调只排队，由主循环发送请求。
+拍摄、录音和 WiFi 导出完整示例见公开开发者指南。SDK 独立使用，不注册 CLI 命令。
 
-录像配置示例：
+## 内部维护
 
-```python
-from edu_host import EduSession
-
-with EduSession(bt="auto") as glasses:
-    print(glasses.get_video_config())
-    glasses.set_video_config(resolution="1080p", orientation="portrait", max_duration_s=60)
-```
-
-完整的存储拍摄→WiFi原件导出、事件自定义和错误处理，
-见[SDK使用说明](docs/SDK_GUIDE.md)。新能力按HELLO/caps检查，旧固件缺能力时明确报错。
-SDK调用不需要运行demo，安装SDK也不会注册`edu-glasses`演示命令。
-
-## SDK开发与验证
-
-```bash
-git clone --branch feat/edu-sdk-integration https://github.com/Entertech/edu-glasses-host.git
-cd edu-glasses-host
-python -m pip install -e .
-python -m unittest discover -s tests -v
-```
-
-SDK源码、既有检查、协议和API文档在本仓库维护。CLI和教学示例在demo仓库维护；
-原`edu-glasses --bt auto`命令改由demo安装提供，迁移步骤见[迁移说明](docs/MIGRATION.md)。
-
-## 固件与验收边界
-
-EDU需专用固件，使用系统蓝牙配对后直连SPP；不走公版App绑定认证。
-HELLO用于能力发现，不提供额外权限分级。WiFi导出沿用公版ISP的ID媒体目录和LAN服务。
-[配套固件源码](https://github.com/Entertech/Looktech-Glasses-Device/tree/feat/edu-main-integration)
-与[历史固件产物说明](firmware/README.md)分别维护，历史WPK不代表具备全部新能力。
-
-已有实机结果和已知问题见[验收范围](docs/SDK_GUIDE.md#验收范围与已知边界)。
-仓库拆分只调整打包和示例归属，不改变设备协议或SDK调用行为。
-
-SDK 0.4.0 增加原生输入能力识别、`get_capture_state()` 及设备拍摄/录音请求事件。
-新版固件的拍照、录像由设备按键直接完成；PC 原始事件仅作观察。集成方式见
-[SDK 使用说明](docs/SDK_GUIDE.md)。先升级 SDK/demo，再更新原生输入固件，避免旧 demo 重复拍摄。
+本仓库维护 SDK 实现、协议与既有检查。公开使用文档在 demo 仓库维护。
+构建和手动发布步骤见 [RELEASING.md](docs/RELEASING.md)，兼容变化见 [MIGRATION.md](docs/MIGRATION.md)。
+构建仅上传 wheel，禁用 sdist；Cython 增加直接阅读源码的成本，无法保证二进制不可逆向。

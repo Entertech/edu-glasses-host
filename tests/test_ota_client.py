@@ -1,13 +1,9 @@
 """Unit tests for the OTA SPP host client."""
 
-import os
 import struct
-import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 
 from edu_host.ota_client import (ASYNC_OK, OP_CAN_UPDATE, OP_ENTER_UPDATE,
                                  OP_GET_INFO, OP_SEND_DATA, OP_UPDATE_RESULT,

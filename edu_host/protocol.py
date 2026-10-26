@@ -590,7 +590,7 @@ class DeviceCaptureState:
             raise ValueError("capture state must contain exactly two entries")
         entries = []
         for offset, expected_kind in ((0, CaptureKind.PHOTO), (4, CaptureKind.VIDEO)):
-            kind, source, state, error = data[offset:offset + 4]
+            kind, source, state, error = struct.unpack_from('<4B', data, offset)
             entry = DeviceCaptureEntry(CaptureKind(kind), CaptureSource(source), CaptureState(state), error)
             if entry.kind != expected_kind:
                 raise ValueError("capture state kind/order mismatch")
