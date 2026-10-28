@@ -2,7 +2,7 @@
 
 公开使用文档统一在 demo 仓库维护，SDK 0.6.0 通过二进制 wheel 分发：
 
-- [外部开发者指南](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/SDK_GUIDE.md)：产品、固件准备、安装、拍摄和导出示例。
+- [外部开发者指南（Demo README）](https://github.com/Entertech/looktech-glasses-demo/blob/main/README.md)：产品、固件准备、安装、拍摄和导出示例。
 - [公共 API 参考](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/API_REFERENCE.md)：参数、返回类型、错误、线程与生命周期约束。
 - [CLI 使用说明](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/CLI_GUIDE.md)。
 

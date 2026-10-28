@@ -3,13 +3,13 @@
 面向开发者的 Looktech 智能眼镜 Python SDK，提供设备控制、拍摄、音频采集、
 传感器、事件、OTA 和 Wi-Fi 媒体导出接口。统一从 `looktech_glasses_sdk.GlassesSession` 接入。
 
-- [外部开发者指南](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/SDK_GUIDE.md)
+- [外部开发者指南（Demo README）](https://github.com/Entertech/looktech-glasses-demo/blob/main/README.md)
 - [API 参考](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/API_REFERENCE.md)
 - [公开 Demo、CLI 和 Notebook](https://github.com/Entertech/looktech-glasses-demo)
 
 ## 安装
 
-> 当前为更名候选版本；新 PyPI 包发布前，请先构建并安装 SDK wheel，再从本仓库安装 Demo。下列 PyPI 命令在新版本发布后使用。
+> 当前为更名候选版本；新 PyPI 包发布前，请安装维护者提供或自行构建的 SDK 0.6.0 wheel，步骤见[开发者指南的安装章节](https://github.com/Entertech/looktech-glasses-demo/blob/main/README.md#5-准备-python-环境并安装)。下列 PyPI 命令在新版本发布后使用。
 
 [SDK 0.6.0 发布后可从 PyPI 安装](https://pypi.org/project/looktech-glasses-sdk/0.6.0/)，使用 Cython 二进制 wheel 分发。在自己的项目安装：
 
