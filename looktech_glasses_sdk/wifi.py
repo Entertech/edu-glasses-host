@@ -1,4 +1,4 @@
-"""Typed EDU WiFi commands; bulk media uses the separately negotiated HTTP endpoint."""
+"""Typed Looktech Glasses WiFi commands; bulk media uses the separately negotiated HTTP endpoint."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,11 +7,11 @@ import struct
 import time
 from typing import Optional, Tuple, TYPE_CHECKING
 
-from .client import EduClientError, EduTimeoutError
+from .client import GlassesClientError, GlassesTimeoutError
 from . import protocol
 
 if TYPE_CHECKING:
-    from .session import EduSession
+    from .session import GlassesSession
 
 
 class WifiOperation(IntEnum):
@@ -44,7 +44,7 @@ class WifiStage(IntEnum):
     FAILED = 8
 
 
-class WifiError(EduClientError):
+class WifiError(GlassesClientError):
     def __init__(self, code: int) -> None:
         self.code = code
         super().__init__("WiFi failed (code %d)" % code)
@@ -91,7 +91,7 @@ class _Reader:
     def unpack(self, fmt: str):
         size = struct.calcsize(fmt)
         if self.offset + size > len(self.data):
-            raise EduClientError("truncated WiFi response")
+            raise GlassesClientError("truncated WiFi response")
         result = struct.unpack_from(fmt, self.data, self.offset)
         self.offset += size
         return result
@@ -100,13 +100,13 @@ class _Reader:
         if length is None:
             length, = self.unpack('<B')
             if length > 32:
-                raise EduClientError("invalid WiFi SSID length")
+                raise GlassesClientError("invalid WiFi SSID length")
         value, = self.unpack('<%ds' % length)
         return value.rstrip(b'\0').decode('utf-8', errors='strict')
 
 
 class WifiClient:
-    def __init__(self, session: EduSession) -> None:
+    def __init__(self, session: GlassesSession) -> None:
         self.session = session
 
     def execute(self, operation: WifiOperation, args: bytes = b''):
@@ -116,7 +116,7 @@ class WifiClient:
         reader = _Reader(response.data)
         echoed, kind = reader.unpack('<BB')
         if echoed != operation:
-            raise EduClientError("WiFi operation does not match response")
+            raise GlassesClientError("WiFi operation does not match response")
         if kind == 4:
             error, = reader.unpack('<B')
             raise WifiError(error)
@@ -127,7 +127,7 @@ class WifiClient:
         elif kind == 1 and operation == WifiOperation.SCAN:
             complete, offset, more, count = reader.unpack('<?I?B')
             if count > 5:
-                raise EduClientError("invalid WiFi scan page")
+                raise GlassesClientError("invalid WiFi scan page")
             networks = []
             for _ in range(count):
                 ssid = reader.string()
@@ -146,9 +146,9 @@ class WifiClient:
                                         WifiOperation.DISCONNECT):
             result = None
         else:
-            raise EduClientError("unexpected WiFi outcome %d" % kind)
+            raise GlassesClientError("unexpected WiFi outcome %d" % kind)
         if reader.offset != len(reader.data):
-            raise EduClientError("unexpected trailing WiFi response data")
+            raise GlassesClientError("unexpected trailing WiFi response data")
         return result
 
     def capabilities(self) -> WifiCapabilities:
@@ -165,10 +165,10 @@ class WifiClient:
                 if not page.has_more:
                     return tuple(networks)
                 if page.next_offset <= offset:
-                    raise EduClientError("WiFi scan cursor did not advance")
+                    raise GlassesClientError("WiFi scan cursor did not advance")
                 offset = page.next_offset
             if time.monotonic() >= deadline:
-                raise EduTimeoutError("WiFi scan did not complete")
+                raise GlassesTimeoutError("WiFi scan did not complete")
             self.session.wait(0.2)
 
     def connect(self, ssid: str, password: str = '', security: WifiSecurity = WifiSecurity.WPA2,
@@ -189,7 +189,7 @@ class WifiClient:
             if status.stage == WifiStage.FAILED:
                 raise WifiError(status.failure)
             if time.monotonic() >= deadline:
-                raise EduTimeoutError("WiFi connection did not become ready")
+                raise GlassesTimeoutError("WiFi connection did not become ready")
             self.session.wait(0.2)
 
     def status(self) -> WifiStatus:
@@ -205,7 +205,7 @@ class WifiClient:
             if status.stage == WifiStage.FAILED:
                 raise WifiError(status.failure)
             if time.monotonic() >= deadline:
-                raise EduTimeoutError("media endpoint did not become SERVING with a catalog identity")
+                raise GlassesTimeoutError("media endpoint did not become SERVING with a catalog identity")
             self.session.wait(0.2)
 
     def disconnect(self) -> None:

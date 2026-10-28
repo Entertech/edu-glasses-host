@@ -16,10 +16,10 @@ from typing import Callable, List, Optional, Tuple, Union
 
 from . import protocol
 from .audio_client import AudioStats, AudioStreamClient
-from .client import EduClient, EduClientError, EduStatusError, EduTimeoutError, Response
+from .client import GlassesClient, GlassesClientError, GlassesStatusError, GlassesTimeoutError, Response
 from .image_client import ImageClient
 from .ota_client import OTAClient, OTAFirmwareImage, ProgressCallback, UpdateResultResponse
-from .protocol import (CommandId, CompletedImage, DeviceInfo, EduEvent, HelloAck,
+from .protocol import (CommandId, CompletedImage, DeviceInfo, GlassesEvent, HelloAck,
                        ImgStateEvent, CaptureEvt, SensorData, Status, Tone)
 from .transport import SerialTransport
 
@@ -27,15 +27,15 @@ log = logging.getLogger(__name__)
 PathLike = Union[str, Path]
 
 
-class EduUnsupportedError(EduClientError):
+class GlassesUnsupportedError(GlassesClientError):
     """The firmware capability or required channel is unavailable."""
 
 
-class EduSession:
+class GlassesSession:
     """One sequential SDK session; construction does not connect.
 
-    Use ``with EduSession(bt="auto") as glasses`` or call ``connect()``.
-    Existing EduClient/transport APIs remain usable independently.
+    Use ``with GlassesSession(bt="auto") as glasses`` or call ``connect()``.
+    Existing GlassesClient/transport APIs remain usable independently.
     """
 
     def __init__(self, bt: Optional[str] = "auto", *,
@@ -50,7 +50,7 @@ class EduSession:
         self._channels = (ctrl_channel, audio_channel, img_channel, ota_channel)
         self._transports = None
         self._pump = None
-        self._client: Optional[EduClient] = None
+        self._client: Optional[GlassesClient] = None
         self._audio: Optional[AudioStreamClient] = None
         self._audio_transport = None
         self._recording = False
@@ -62,15 +62,15 @@ class EduSession:
         self.hello_ack: Optional[HelloAck] = None
         self._incoming: queue.Queue = queue.Queue()
         self._images: queue.Queue = queue.Queue()
-        self._event_listeners: List[Callable[[EduEvent], None]] = []
+        self._event_listeners: List[Callable[[GlassesEvent], None]] = []
         self._image_listeners: List[Callable[[Path, CompletedImage], None]] = []
         self._photo_pending = False
         self._completed_photo: Optional[Path] = None
-        self._photo_error: Optional[EduClientError] = None
+        self._photo_error: Optional[GlassesClientError] = None
 
     @classmethod
     def from_transports(cls, ctrl, audio=None, image=None, ota=None,
-                        out_dir: PathLike = "captures") -> "EduSession":
+                        out_dir: PathLike = "captures") -> "GlassesSession":
         """Use existing serial/socket Transport instances (background readers)."""
         session = cls(bt=None, out_dir=out_dir)
         session._transports = (ctrl, audio, image, ota)
@@ -78,7 +78,7 @@ class EduSession:
 
     def _check_thread(self) -> None:
         if self._pump is not None and threading.current_thread() is not threading.main_thread():
-            raise EduClientError("macOS Bluetooth requires the process main thread")
+            raise GlassesClientError("macOS Bluetooth requires the process main thread")
 
     def _make_transports(self):
         if self._ports[0]:
@@ -87,41 +87,41 @@ class EduSession:
             raise ValueError("provide bt or ctrl_port")
         if sys.platform == "darwin":
             if threading.current_thread() is not threading.main_thread():
-                raise EduClientError("macOS Bluetooth requires the process main thread")
+                raise GlassesClientError("macOS Bluetooth requires the process main thread")
             try:
                 from . import mac_bt
             except ImportError as exc:
-                raise EduClientError("macOS Bluetooth needs pyobjc-core and "
+                raise GlassesClientError("macOS Bluetooth needs pyobjc-core and "
                                      "pyobjc-framework-IOBluetooth") from exc
             self._pump = mac_bt.pump
             dev = mac_bt.find_device(self.bt)
             if dev is None:
-                raise EduClientError("device not found; pair EDU-* glasses in system Bluetooth settings")
+                raise GlassesClientError("device not found; pair EDU-* glasses in system Bluetooth settings")
             if not dev.isConnected():
                 dev.openConnection()
                 self._pump(2.0)
             uuids = [mac_bt.UUID_CTRL, mac_bt.UUID_AUDIO, mac_bt.UUID_IMG, mac_bt.UUID_OTA]
             channels = mac_bt.sdp_channels(dev, uuids)
             if mac_bt.UUID_CTRL not in channels:
-                raise EduUnsupportedError("EDU-CTRL service (0x2028) not found")
+                raise GlassesUnsupportedError("EDU-CTRL service (0x2028) not found")
             return tuple(mac_bt.MacRFCOMMChannel(dev, channels[u], name)
                          if u in channels else None
                          for u, name in zip(uuids, ("ctrl", "audio", "img", "ota")))
         from .bt_socket import SocketRFCOMMTransport, bt_socket_supported
         if not bt_socket_supported():
-            raise EduUnsupportedError("this Python has no Bluetooth socket support; use serial ports")
+            raise GlassesUnsupportedError("this Python has no Bluetooth socket support; use serial ports")
         address = self.bt
         if address == "auto":
             from .bt_discovery import find_paired_device
             found = find_paired_device()
             if found is None:
-                raise EduClientError("no paired EDU-* glasses found; pair first or provide bt=<address>")
+                raise GlassesClientError("no paired EDU-* glasses found; pair first or provide bt=<address>")
             address, name = found
             log.info("auto-selected %s (%s)", name, address)
         return tuple(SocketRFCOMMTransport(address, ch, name=name)
                      for ch, name in zip(self._channels, ("ctrl", "audio", "img", "ota")))
 
-    def connect(self, timeout: float = 6.0) -> "EduSession":
+    def connect(self, timeout: float = 6.0) -> "GlassesSession":
         self._check_thread()
         if self.is_connected:
             return self
@@ -132,7 +132,7 @@ class EduSession:
         self._video_operation = None
         try:
             ctrl, audio, image, self._ota_transport = self._transports or self._make_transports()
-            self._client = EduClient(ctrl, pump=self.poll if self._pump else None)
+            self._client = GlassesClient(ctrl, pump=self.poll if self._pump else None)
             self._client.add_event_listener(self._incoming.put)
             if self._pump:
                 self._client.start()
@@ -158,7 +158,7 @@ class EduSession:
                 self._client.start()
             self.hello_ack = self._client.hello(timeout=timeout)
             if self.hello_ack.proto_ver != protocol.PROTO_VERSION:
-                raise EduUnsupportedError("unsupported EDU protocol version %d" % self.hello_ack.proto_ver)
+                raise GlassesUnsupportedError("unsupported EDU protocol version %d" % self.hello_ack.proto_ver)
             return self
         except BaseException:
             self.close()
@@ -186,25 +186,25 @@ class EduSession:
     def _require_connected(self) -> None:
         self._check_thread()
         if not self.is_connected:
-            raise EduClientError("session is not connected; call connect() first")
+            raise GlassesClientError("session is not connected; call connect() first")
         if self._ota_running:
-            raise EduClientError("OTA upgrade is in progress")
+            raise GlassesClientError("OTA upgrade is in progress")
 
     def _require(self, capability: int, channel=True) -> None:
         self._require_connected()
         if not self.supports(capability):
-            raise EduUnsupportedError("firmware does not advertise %s" %
+            raise GlassesUnsupportedError("firmware does not advertise %s" %
                                       ", ".join(protocol.caps_to_names(capability)))
         if not channel:
-            raise EduUnsupportedError("required channel is unavailable; reconnect with that channel configured")
+            raise GlassesUnsupportedError("required channel is unavailable; reconnect with that channel configured")
 
     def _request(self, command: int, args: bytes = b"", timeout: float = 5.0) -> Response:
         self._require_connected()
         response = self._client.request(command, args, timeout)
         if response.cmd_id != command:
-            raise EduClientError("response command does not match request")
+            raise GlassesClientError("response command does not match request")
         if response.status != Status.OK:
-            raise EduStatusError(command, response.status, response.data)
+            raise GlassesStatusError(command, response.status, response.data)
         self.poll(0)
         return response
 
@@ -277,7 +277,7 @@ class EduSession:
         self._require(protocol.CAP_SENSORS)
         return SensorData.parse(self._request(CommandId.GET_SENSORS, timeout=timeout).data)
 
-    def add_event_listener(self, callback: Callable[[EduEvent], None]) -> None:
+    def add_event_listener(self, callback: Callable[[GlassesEvent], None]) -> None:
         """Callbacks run on the caller's thread during poll/wait (keep them short)."""
         self._event_listeners.append(callback)
 
@@ -285,7 +285,7 @@ class EduSession:
         """Called after a complete image has been written to disk."""
         self._image_listeners.append(callback)
 
-    def poll(self, seconds: float = 0.05) -> List[EduEvent]:
+    def poll(self, seconds: float = 0.05) -> List[GlassesEvent]:
         self._check_thread()
         seconds = self._duration(seconds)
         if self._pump:
@@ -307,7 +307,7 @@ class EduSession:
             events.append(event)
             if self._photo_pending and isinstance(event, ImgStateEvent) and event.capture_evt in (
                     CaptureEvt.ERROR, CaptureEvt.REMOTE_ERROR, CaptureEvt.CANCEL):
-                self._photo_error = EduClientError("photo failed: %s" % event)
+                self._photo_error = GlassesClientError("photo failed: %s" % event)
                 self._photo_pending = False
             for callback in self._event_listeners:
                 self._notify(callback, event)
@@ -344,11 +344,11 @@ class EduSession:
         while time.monotonic() < deadline:
             self.poll(min(0.05, max(0.0, deadline - time.monotonic())))
 
-    def events(self, seconds: float) -> List[EduEvent]:
+    def events(self, seconds: float) -> List[GlassesEvent]:
         """Collect new typed events during this interval."""
         self._require_connected()
         self.poll(0)
-        found: List[EduEvent] = []
+        found: List[GlassesEvent] = []
         self._event_listeners.append(found.append)
         try:
             self.wait(seconds)
@@ -365,14 +365,14 @@ class EduSession:
         self._require(protocol.CAP_PHOTO, self._image is not None)
         self.poll(0)
         if self._photo_pending:
-            raise EduClientError("a photo is already pending")
+            raise GlassesClientError("a photo is already pending")
         self._completed_photo = None
         self._photo_error = None
         self._photo_pending = True
         self._image.set_next_photo_path(self._output_path(filename) if filename else None)
         try:
             return self._request(CommandId.TAKE_PHOTO, timeout=timeout)
-        except EduTimeoutError:
+        except GlassesTimeoutError:
             # The capture may have started; keep its filename and pending state.
             raise
         except BaseException:
@@ -390,7 +390,7 @@ class EduSession:
             if self._photo_error is not None:
                 raise self._photo_error
             if time.monotonic() >= deadline:
-                raise EduTimeoutError("photo was not saved within %.1fs" % timeout)
+                raise GlassesTimeoutError("photo was not saved within %.1fs" % timeout)
             self.poll(min(0.05, max(0.0, deadline - time.monotonic())))
 
     def photo(self, filename: Optional[PathLike] = None, timeout: float = 30.0) -> Path:
@@ -404,14 +404,14 @@ class EduSession:
     def record_start(self, filename: PathLike = "record.wav", timeout: float = 5.0) -> Path:
         self._require(protocol.CAP_AUDIO_STREAM, self._audio is not None)
         if self.is_recording:
-            raise EduClientError("recording already running")
+            raise GlassesClientError("recording already running")
         actual = self._audio.start(self._output_path(filename), threaded=self._pump is None)
         self._recording = True
         try:
             self._request(CommandId.AUDIO_START, timeout=timeout)
         except BaseException as exc:
             try:
-                if isinstance(exc, EduTimeoutError):
+                if isinstance(exc, GlassesTimeoutError):
                     try:
                         self._request(CommandId.AUDIO_STOP, timeout=2.0)
                     except Exception:
@@ -425,7 +425,7 @@ class EduSession:
     def record_stop(self, timeout: float = 5.0) -> AudioStats:
         self._require_connected()
         if not self.is_recording:
-            raise EduClientError("no recording in progress")
+            raise GlassesClientError("no recording in progress")
         try:
             self._request(CommandId.AUDIO_STOP, timeout=timeout)
             self.wait(0.1)
@@ -433,7 +433,7 @@ class EduSession:
             self._recording = False
             stats = self._audio.stop(close_transport=self._pump is None)
         if stats.frames_written == 0:
-            raise EduClientError("recording produced no usable audio: %s" % stats.output_path)
+            raise GlassesClientError("recording produced no usable audio: %s" % stats.output_path)
         return stats
 
     def record(self, filename: PathLike, seconds: float, timeout: float = 5.0) -> Path:
@@ -472,9 +472,9 @@ class EduSession:
         self._require_connected()
         self.poll(0)
         if self.is_recording or self._photo_pending:
-            raise EduClientError("stop recording or finish the pending photo before OTA")
+            raise GlassesClientError("stop recording or finish the pending photo before OTA")
         if self._ota_transport is None:
-            raise EduUnsupportedError("OTA service (0x2026) unavailable")
+            raise GlassesUnsupportedError("OTA service (0x2026) unavailable")
         # Reject invalid files before touching any live Bluetooth channel.
         OTAFirmwareImage.parse(Path(filename).read_bytes())
         client = OTAClient(self._ota_transport, pump=self.poll if self._pump else None,
@@ -533,7 +533,7 @@ class EduSession:
                         self._audio_transport = self._ota_transport = None
                         self.hello_ack = None
 
-    def __enter__(self) -> "EduSession":
+    def __enter__(self) -> "GlassesSession":
         return self.connect()
 
     def __exit__(self, *exc) -> None:

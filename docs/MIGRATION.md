@@ -1,5 +1,30 @@
 # SDK 发行与迁移
 
+## 0.6.0：Looktech Glasses 全量更名（2026-10-28）
+
+开发阶段统一采用新名称，不保留旧模块、类型、命令或发行包的兼容入口。
+
+| 对象 | 新名称 |
+|---|---|
+| SDK 仓库 / PyPI 项目 | `Entertech/looktech-glasses-sdk` / `looktech-glasses-sdk` |
+| Python 模块 | `looktech_glasses_sdk` |
+| 公开类型 | `GlassesSession`、`GlassesClient`、`GlassesClientError`、`GlassesStatusError`、`GlassesTimeoutError`、`GlassesUnsupportedError`、`GlassesEvent` |
+| 捕获来源 | `CaptureSource.SDK`，协议数值仍为 4 |
+| Demo 仓库 / 发行名 | `Entertech/looktech-glasses-demo` / `looktech-glasses-demo`，版本 0.4.0 |
+| CLI / Notebook | `looktech-glasses` / `glasses_notebook.py` |
+
+SDK 0.6.0 为新 PyPI 项目的候选版本，发布前使用构建的本地 wheel；Demo 固定依赖同一版本。
+先完成新项目的 Trusted Publisher 配置、构建和发行，再切换 Demo 默认分支的依赖。
+仓库与包描述统一面向开发者，当前说明使用“开发者固件”“交互式 Notebook”和“SPP JPEG 小图”。
+源码包目录、Cython 扩展、类型声明、动态子进程导入、版本门禁和既有检查同时迁移。
+
+原始蓝牙设备前缀 `EDU-`、服务 UUID、CRC、帧格式、能力位与命令编号仍与现有固件一致。
+当前固件获取仍需联系我们通过 OTA 协助，不新增 App 升级入口。历史固件文件、配置名及验收记录保留真实身份。
+仅修改软件命名，不改变设备生命周期、超时、错误、采集、存储和删除语义。构建与发布见 [RELEASING.md](RELEASING.md)。
+
+以下保留旧版本原始迁移记录，不作为 0.6.0 的安装指引或兼容承诺。
+
+
 ## 0.5.0：二进制发行（2026-10-26）
 
 SDK 实现与 demo 分仓维护；当前 SDK 仓库暂时保持公开，demo 和文档位于 `Entertech/edu-glasses-demo`。

@@ -3,9 +3,9 @@ requires = ["setuptools>=77", "wheel", "Cython>=3.1,<4", "mypy>=1.13,<3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "edu-glasses-host"
-version = "0.5.0"
-description = "Python SDK for Looktech education glasses (EDU v1)"
+name = "looktech-glasses-sdk"
+version = "0.6.0"
+description = "Python SDK for Looktech Glasses: device control, media capture, sensors, events, OTA updates, and Wi-Fi media export."
 readme = "README.md"
 license = "LicenseRef-Proprietary"
 requires-python = ">=3.9"
@@ -21,7 +21,7 @@ py-modules = []
 include-package-data = false
 
 [tool.setuptools.packages.find]
-include = ["edu_host*"]
+include = ["looktech_glasses_sdk*"]
 
 [tool.cibuildwheel]
 build = "cp3{9,10,11,12,13,14}-*"

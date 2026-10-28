@@ -1,20 +1,20 @@
-# AGENTS.md — edu-glasses-host
+# AGENTS.md — looktech-glasses-sdk
 
-本仓库维护可独立安装的`edu_host` SDK、既有检查、[通信协议](docs/PROTOCOL.md)和
+本仓库维护可独立安装的`looktech_glasses_sdk` SDK、既有检查、[通信协议](docs/PROTOCOL.md)和
 [SDK使用说明](docs/SDK_GUIDE.md)。CLI、Notebook与设备操作技能在
-[edu-glasses-demo](https://github.com/Entertech/edu-glasses-demo)维护；需要操作demo时阅读该仓库AGENTS.md。
+[looktech-glasses-demo](https://github.com/Entertech/looktech-glasses-demo)维护；需要操作demo时阅读该仓库AGENTS.md。
 
 ## 修改与验收
 
-1. SDK功能放在`edu_host/`并经`EduSession`统一暴露。既有低层API与`from edu_host import ...`保持兼容。
+1. SDK功能放在`looktech_glasses_sdk/`并经`GlassesSession`统一暴露。开发阶段已统一更名，不保留旧模块、类型或命令的兼容入口。
 2. 协议变更先与固件对齐，更新`docs/PROTOCOL.md`；公开API、安装方式变化同步更新SDK使用说明。
-3. Python 3.9+；SDK基础安装无必选依赖，`macos`、`serial`、`audio`按需安装。入口与版本在`pyproject.toml`，`edu_host.__version__`同步。
-4. 检查SDK wheel只包含`edu_host`，不包含demo模块或控制台入口。demo只安装SDK，不导入邻接源码树。
+3. Python 3.9+；SDK基础安装无必选依赖，`macos`、`serial`、`audio`按需安装。入口与版本在`pyproject.toml`，`looktech_glasses_sdk.__version__`同步。
+4. 检查SDK wheel只包含`looktech_glasses_sdk`，不包含demo模块或控制台入口。demo只安装SDK，不导入邻接源码树。
 5. 在SDK仓库执行既有检查：
 
 ```bash
 python -m unittest discover -s tests -v
-python -m compileall -q edu_host
+python -m compileall -q looktech_glasses_sdk
 python -m pip wheel --no-deps . -w dist
 ```
 

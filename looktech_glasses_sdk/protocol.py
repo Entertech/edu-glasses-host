@@ -4,7 +4,7 @@ Everything in this module is pure Python (stdlib only) so it can be unit
 tested without hardware.
 
 Ground truth: the wire-protocol specification in ``docs/PROTOCOL.md``
-(verified against the education firmware on real hardware).
+(verified against the developer firmware on real hardware).
 
 Frame layout (all multi-byte fields little-endian)::
 
@@ -566,7 +566,7 @@ class CaptureSource(IntEnum):
     LOCAL = 1
     APP = 2
     AI = 3
-    EDU = 4
+    SDK = 4
 
 
 @dataclass(frozen=True)
@@ -622,11 +622,11 @@ class UnknownEvent:
         return "UNKNOWN_EVT 0x%02X %s" % (self.evt_id, self.data.hex())
 
 
-EduEvent = Union[ButtonEvent, KnobEvent, AudioStateEvent, ImgStateEvent,
+GlassesEvent = Union[ButtonEvent, KnobEvent, AudioStateEvent, ImgStateEvent,
                  DeviceCaptureState, AudioRecordRequestEvent, UnknownEvent]
 
 
-def parse_event(payload: bytes) -> EduEvent:
+def parse_event(payload: bytes) -> GlassesEvent:
     """Parse an EVT frame payload (evt_id u8 + event data) into a dataclass."""
     if not payload:
         raise ValueError("empty EVT payload")

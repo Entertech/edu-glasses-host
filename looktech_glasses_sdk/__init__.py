@@ -1,22 +1,22 @@
-"""Host-side Python library for the Looktech glasses education firmware.
+"""Host-side Python library for Looktech Glasses developer firmware.
 
 Modules:
 
-* :mod:`edu_host.crc16` — firmware CRC-16 port;
-* :mod:`edu_host.protocol` — EDU-CTRL frame codec, enums, image reassembly;
-* :mod:`edu_host.transport` — serial transport abstraction;
-* :mod:`edu_host.client` — EduClient (handshake, request/response, events);
-* :mod:`edu_host.image_client` — air-img image channel receiver (photos);
-* :mod:`edu_host.audio_client` — EDU-AUDIO stream parser and OPUS->WAV writer;
-* :mod:`edu_host.session` — platform-aware EduSession SDK.
+* :mod:`looktech_glasses_sdk.crc16` — firmware CRC-16 port;
+* :mod:`looktech_glasses_sdk.protocol` — EDU-CTRL frame codec, enums, image reassembly;
+* :mod:`looktech_glasses_sdk.transport` — serial transport abstraction;
+* :mod:`looktech_glasses_sdk.client` — GlassesClient (handshake, request/response, events);
+* :mod:`looktech_glasses_sdk.image_client` — air-img image channel receiver (photos);
+* :mod:`looktech_glasses_sdk.audio_client` — EDU-AUDIO stream parser and OPUS->WAV writer;
+* :mod:`looktech_glasses_sdk.session` — platform-aware GlassesSession SDK.
 """
 
-from .client import (EduClient, EduClientError, EduStatusError,
-                     EduTimeoutError, Response)
+from .client import (GlassesClient, GlassesClientError, GlassesStatusError,
+                     GlassesTimeoutError, Response)
 from .audio_client import AudioStats, AudioStreamClient
 from .image_client import ImageClient
 from .transport import SerialTransport, Transport, list_serial_ports
-from .session import EduSession, EduUnsupportedError
+from .session import GlassesSession, GlassesUnsupportedError
 from .wifi import (WifiCapabilities, WifiError, WifiNetwork, WifiSecurity,
                    WifiStage, WifiStatus)
 from .media import (DeleteResult, DownloadResult, MediaCancelled, MediaError,
@@ -28,15 +28,15 @@ from .bt_discovery import AmbiguousGlassesError
 from .ota_client import OTAError, OTAStatusError, OTATimeoutError, UpdateResultResponse
 from .protocol import (AudioRecordRequestEvent, CaptureKind, CaptureSource,
                        DeviceCaptureEntry, DeviceCaptureState, AudioStateEvent, ButtonEvent, CaptureEvt, CompletedImage,
-                       DeviceInfo, EduEvent,
+                       DeviceInfo, GlassesEvent,
                        HelloAck, ImgStateEvent, KnobEvent, LedColor, LedId,
                        LedMode, LedSpeed, SensorData, Tone, UnknownEvent)
 
 __all__ = [
-    "EduClient",
-    "EduClientError",
-    "EduStatusError",
-    "EduTimeoutError",
+    "GlassesClient",
+    "GlassesClientError",
+    "GlassesStatusError",
+    "GlassesTimeoutError",
     "Response",
     "AudioStats",
     "AudioStreamClient",
@@ -44,7 +44,7 @@ __all__ = [
     "SerialTransport",
     "Transport",
     "list_serial_ports",
-    "EduSession", "EduUnsupportedError",
+    "GlassesSession", "GlassesUnsupportedError",
     "WifiCapabilities", "WifiError", "WifiNetwork", "WifiSecurity", "WifiStage", "WifiStatus",
     "DeleteResult", "DownloadResult", "MediaCancelled", "MediaError", "MediaFile",
     "MediaImport", "MediaItem", "MediaSessionError",
@@ -52,11 +52,11 @@ __all__ = [
     "VideoConfig", "VideoConfigState", "VideoOrientation", "VideoResolution",
     "AmbiguousGlassesError",
     "OTAError", "OTAStatusError", "OTATimeoutError",
-    "UpdateResultResponse", "CompletedImage", "EduEvent",
+    "UpdateResultResponse", "CompletedImage", "GlassesEvent",
     "HelloAck", "DeviceInfo", "SensorData", "ButtonEvent", "KnobEvent",
     "AudioRecordRequestEvent", "CaptureKind", "CaptureSource", "DeviceCaptureEntry", "DeviceCaptureState",
     "AudioStateEvent", "ImgStateEvent", "UnknownEvent", "CaptureEvt",
     "LedId", "LedMode", "LedColor", "LedSpeed", "Tone",
 ]
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"

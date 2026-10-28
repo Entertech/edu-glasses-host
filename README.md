@@ -1,20 +1,22 @@
-# Looktech EDU 眼镜 Python SDK
+# Looktech Glasses Python SDK
 
-通过经典蓝牙 SPP 调用 EDU 眼镜的设备信息、传感器、拍照、录像、麦克风、事件、
-设备控制、OTA 和 WiFi 媒体导出能力。统一从 `edu_host.EduSession` 接入。
+面向开发者的 Looktech 智能眼镜 Python SDK，提供设备控制、拍摄、音频采集、
+传感器、事件、OTA 和 Wi-Fi 媒体导出接口。统一从 `looktech_glasses_sdk.GlassesSession` 接入。
 
-- [外部开发者指南](https://github.com/Entertech/edu-glasses-demo/blob/main/docs/SDK_GUIDE.md)
-- [API 参考](https://github.com/Entertech/edu-glasses-demo/blob/main/docs/API_REFERENCE.md)
-- [公开 Demo、CLI 和 Notebook](https://github.com/Entertech/edu-glasses-demo)
+- [外部开发者指南](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/SDK_GUIDE.md)
+- [API 参考](https://github.com/Entertech/looktech-glasses-demo/blob/main/docs/API_REFERENCE.md)
+- [公开 Demo、CLI 和 Notebook](https://github.com/Entertech/looktech-glasses-demo)
 
 ## 安装
 
-[SDK 0.5.0 已发布到 PyPI](https://pypi.org/project/edu-glasses-host/0.5.0/)，使用 Cython 二进制 wheel 分发。在自己的项目安装：
+> 当前为更名候选版本；新 PyPI 包发布前，请先构建并安装 SDK wheel，再从本仓库安装 Demo。下列 PyPI 命令在新版本发布后使用。
+
+[SDK 0.6.0 发布后可从 PyPI 安装](https://pypi.org/project/looktech-glasses-sdk/0.6.0/)，使用 Cython 二进制 wheel 分发。在自己的项目安装：
 
 ```bash
-python -m pip install --only-binary=edu-glasses-host "edu-glasses-host==0.5.0"
+python -m pip install --only-binary=looktech-glasses-sdk "looktech-glasses-sdk==0.6.0"
 # macOS 使用这一条
-python -m pip install --only-binary=edu-glasses-host "edu-glasses-host[macos]==0.5.0"
+python -m pip install --only-binary=looktech-glasses-sdk "looktech-glasses-sdk[macos]==0.6.0"
 ```
 
 支持标准 CPython 3.9–3.14：Windows x64、macOS 11+ Intel/Apple Silicon、Linux glibc 2.17+ x64/ARM64。
@@ -26,12 +28,12 @@ WAV 解码另需系统 libopus；缺少时录音保留 `.opusraw`。
 
 ## 第一个程序
 
-先安装 EDU 固件，在系统蓝牙设置配对眼镜，然后：
+先安装开发者固件，在系统蓝牙设置配对眼镜，然后：
 
 ```python
-from edu_host import EduSession
+from looktech_glasses_sdk import GlassesSession
 
-with EduSession(bt="auto") as glasses:
+with GlassesSession(bt="auto") as glasses:
     print(glasses.capabilities)
     print(glasses.info())
     if glasses.supports("SENSORS"):

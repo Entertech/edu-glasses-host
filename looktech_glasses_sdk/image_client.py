@@ -5,7 +5,7 @@ air-img sub-frames (no outer framing, no CRC — see protocol.py). This client
 runs a background reader that cuts the stream into sub-frames, reassembles
 complete JPEGs and saves them under an output directory.
 
-Typical use together with :class:`edu_host.client.EduClient`::
+Typical use together with :class:`looktech_glasses_sdk.client.GlassesClient`::
 
     img = ImageClient(SerialTransport(img_port))
     img.add_image_listener(lambda path, image: print("saved", path))
@@ -24,7 +24,7 @@ from typing import Callable, List, Optional
 from .protocol import AirImgStreamParser, CompletedImage, ImageReassembler
 from .transport import Transport
 
-log = logging.getLogger("edu_host.image_client")
+log = logging.getLogger("looktech_glasses_sdk.image_client")
 
 ImageCallback = Callable[[Path, CompletedImage], None]
 
@@ -54,7 +54,7 @@ class ImageClient:
         if not threaded:
             return
         self._reader = threading.Thread(target=self._reader_loop,
-                                        name="edu-img-reader", daemon=True)
+                                        name="looktech-img-reader", daemon=True)
         self._reader.start()
 
     def close(self) -> None:

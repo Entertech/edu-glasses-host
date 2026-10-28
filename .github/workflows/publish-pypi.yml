@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: SDK version matching pyproject.toml (e.g. 0.5.0)
+        description: SDK version matching pyproject.toml (e.g. 0.6.0)
         required: true
         type: string
       publish:
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/project/edu-glasses-host/
+      url: https://pypi.org/project/looktech-glasses-sdk/
     permissions:
       contents: read
       id-token: write
