@@ -8,12 +8,12 @@ import time
 from typing import TYPE_CHECKING, Optional
 
 from . import protocol
-from .client import EduClientError, EduTimeoutError
+from .client import GlassesClientError, GlassesTimeoutError
 from .catalog import MediaCapabilities
 from .protocol import CaptureState, DeviceCaptureState
 
 if TYPE_CHECKING:
-    from .session import EduSession
+    from .session import GlassesSession
 
 
 class VideoResolution(IntEnum):
@@ -50,21 +50,21 @@ class CaptureResult:
     error: int
 
 
-class CaptureError(EduClientError):
+class CaptureError(GlassesClientError):
     def __init__(self, result: CaptureResult) -> None:
         self.result = result
         text = 'capture completion unknown' if result.state == CaptureState.UNKNOWN else 'capture failed'
         super().__init__('%s: operation=%d error=%d; not retried' % (text, result.operation_id, result.error))
 
 
-class CaptureTimeoutError(EduTimeoutError):
+class CaptureTimeoutError(GlassesTimeoutError):
     def __init__(self, operation_id: int) -> None:
         self.operation_id = operation_id
         super().__init__('capture completion unknown: operation=%d; not retried' % operation_id)
 
 
 class CaptureClient:
-    def __init__(self, session: EduSession) -> None:
+    def __init__(self, session: GlassesSession) -> None:
         self.session = session
 
     def capabilities(self) -> MediaCapabilities:
@@ -75,15 +75,15 @@ class CaptureClient:
         self.session._require(protocol.CAP_VIDEO_CONFIG)
         data = self.session._request(command, args).data
         if len(data) != 9:
-            raise EduClientError('invalid video config response length')
+            raise GlassesClientError('invalid video config response length')
         resolution, orientation, duration, wanted_res, wanted_mode, state = struct.unpack('<BBIBBB', data)
         try:
             config = VideoConfig(VideoResolution(resolution), VideoOrientation(orientation), duration,
                                  VideoResolution(wanted_res), VideoOrientation(wanted_mode), VideoConfigState(state))
         except ValueError as exc:
-            raise EduClientError('invalid video config response value') from exc
+            raise GlassesClientError('invalid video config response value') from exc
         if config.sync_state == VideoConfigState.APPLIED and (resolution, orientation) != (wanted_res, wanted_mode):
-            raise EduClientError('confirmed video profile does not match the requested profile')
+            raise GlassesClientError('confirmed video profile does not match the requested profile')
         return config
 
     def get_video_config(self) -> VideoConfig:
@@ -124,13 +124,13 @@ class CaptureClient:
         expected = config.requested_resolution, config.requested_orientation
         while True:
             if not self.session.is_connected or self.session._client is not owner:
-                raise EduClientError('video config CTRL owner disconnected or changed')
+                raise GlassesClientError('video config CTRL owner disconnected or changed')
             if (config.requested_resolution, config.requested_orientation) != expected:
-                raise EduClientError('video config request failed or was superseded; query current config')
+                raise GlassesClientError('video config request failed or was superseded; query current config')
             if config.sync_state == VideoConfigState.APPLIED:
                 return config
             if time.monotonic() >= deadline:
-                raise EduTimeoutError('video config application unconfirmed; query get_video_config(); not retried')
+                raise GlassesTimeoutError('video config application unconfirmed; query get_video_config(); not retried')
             self.session.wait(0.1)
             config = self.get_video_config()
 
@@ -143,7 +143,7 @@ class CaptureClient:
         try:
             return DeviceCaptureState.parse(data)
         except ValueError as exc:
-            raise EduClientError('invalid device capture state') from exc
+            raise GlassesClientError('invalid device capture state') from exc
 
     def status(self, operation: int) -> CaptureResult:
         self.session._require(protocol.CAP_MEDIA_CATALOG)
@@ -151,22 +151,22 @@ class CaptureClient:
             raise ValueError('operation must be a nonzero uint32')
         data = self.session._request(protocol.CommandId.MEDIA_STATUS, struct.pack('<I', operation)).data
         if len(data) != 7:
-            raise EduClientError('invalid capture status response')
+            raise GlassesClientError('invalid capture status response')
         op, kind, state, error = struct.unpack('<IBBB', data)
         if op != operation or kind not in (1, 2) or state == CaptureState.IDLE:
-            raise EduClientError('capture status identity does not match request')
+            raise GlassesClientError('capture status identity does not match request')
         try:
             return CaptureResult(op, kind, CaptureState(state), error)
         except ValueError as exc:
-            raise EduClientError('invalid capture state') from exc
+            raise GlassesClientError('invalid capture state') from exc
 
     def _begin(self, command: int) -> int:
         data = self.session._request(command).data
         if len(data) != 4:
-            raise EduClientError('invalid capture acceptance response')
+            raise GlassesClientError('invalid capture acceptance response')
         operation, = struct.unpack('<I', data)
         if not operation:
-            raise EduClientError('capture accepted without an operation identity')
+            raise GlassesClientError('capture accepted without an operation identity')
         return operation
 
     def wait(self, operation: int, timeout: float, started: bool = False) -> CaptureResult:
@@ -174,7 +174,7 @@ class CaptureClient:
         deadline = time.monotonic() + self.session._duration(timeout)
         while True:
             if not self.session.is_connected or self.session._client is not owner:
-                raise EduClientError('capture CTRL owner disconnected or changed')
+                raise GlassesClientError('capture CTRL owner disconnected or changed')
             result = self.status(operation)
             if result.state in (CaptureState.FAILED, CaptureState.UNKNOWN):
                 raise CaptureError(result)

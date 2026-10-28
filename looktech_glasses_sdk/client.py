@@ -1,4 +1,4 @@
-"""EduClient: high-level host-side client for the EDU-CTRL channel.
+"""GlassesClient: high-level host-side client for the EDU-CTRL channel.
 
 Responsibilities:
 
@@ -9,7 +9,7 @@ Responsibilities:
   to registered callbacks.
 
 Images do not travel on this channel: connect the separate air-img SPP
-channel (UUID 0x2025) with :class:`edu_host.image_client.ImageClient`.
+channel (UUID 0x2025) with :class:`looktech_glasses_sdk.image_client.ImageClient`.
 
 By default a background thread reads and dispatches callbacks. With an explicit
 ``pump`` callback, requests drive it on the caller's thread; the pump must call
@@ -25,25 +25,25 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from . import protocol
-from .protocol import (CommandId, DeviceInfo, EduEvent, Frame, FrameParser,
+from .protocol import (CommandId, DeviceInfo, GlassesEvent, Frame, FrameParser,
                        FrameType, HelloAck, SensorData, Status, encode_frame,
                        parse_event)
 from .transport import Transport
 
-log = logging.getLogger("edu_host.client")
+log = logging.getLogger("looktech_glasses_sdk.client")
 
-EventCallback = Callable[[EduEvent], None]
+EventCallback = Callable[[GlassesEvent], None]
 
 
-class EduClientError(Exception):
+class GlassesClientError(Exception):
     """Generic client error."""
 
 
-class EduTimeoutError(EduClientError):
+class GlassesTimeoutError(GlassesClientError):
     """The device did not answer within the timeout."""
 
 
-class EduStatusError(EduClientError):
+class GlassesStatusError(GlassesClientError):
     """The device answered with a non-OK status."""
 
     def __init__(self, cmd_id: int, status: int, data: bytes = b"") -> None:
@@ -72,7 +72,7 @@ class _Pending:
         self.frame: Optional[Frame] = None
 
 
-class EduClient:
+class GlassesClient:
     """Host client for the EDU-CTRL SPP channel (UUID 0x2028)."""
 
     def __init__(self, transport: Transport,
@@ -100,7 +100,7 @@ class EduClient:
         if self._pump is not None:
             return  # IOBluetooth is polled on the calling main thread.
         self._reader = threading.Thread(target=self._reader_loop,
-                                        name="edu-ctrl-reader", daemon=True)
+                                        name="looktech-ctrl-reader", daemon=True)
         self._reader.start()
 
     def close(self) -> None:
@@ -141,7 +141,7 @@ class EduClient:
         frame = self._transact(FrameType.CMD, bytes([cmd_id]) + args,
                                FrameType.RSP, timeout)
         if len(frame.payload) < 2:
-            raise EduClientError("RSP payload too short: %s"
+            raise GlassesClientError("RSP payload too short: %s"
                                  % frame.payload.hex())
         rsp = Response(cmd_id=frame.payload[0], status=frame.payload[1],
                        data=bytes(frame.payload[2:]))
@@ -152,10 +152,10 @@ class EduClient:
 
     def request_ok(self, cmd_id: int, args: bytes = b"",
                    timeout: float = 5.0) -> Response:
-        """Like :meth:`request` but raises :class:`EduStatusError` on non-OK."""
+        """Like :meth:`request` but raises :class:`GlassesStatusError` on non-OK."""
         rsp = self.request(cmd_id, args, timeout)
         if rsp.status != Status.OK:
-            raise EduStatusError(rsp.cmd_id, rsp.status, rsp.data)
+            raise GlassesStatusError(rsp.cmd_id, rsp.status, rsp.data)
         return rsp
 
     # -- convenience wrappers ---------------------------------------------------
@@ -171,7 +171,7 @@ class EduClient:
     def take_photo(self, timeout: float = 5.0) -> Response:
         """Trigger a photo. The RSP only acknowledges the request; the image
         itself arrives asynchronously on the air-img channel (see
-        edu_host.image_client.ImageClient), while IMG_STATE events on this
+        looktech_glasses_sdk.image_client.ImageClient), while IMG_STATE events on this
         channel report capture progress."""
         return self.request(CommandId.TAKE_PHOTO, timeout=timeout)
 
@@ -227,7 +227,7 @@ class EduClient:
             else:
                 pending.event.wait(timeout)
             if not pending.event.is_set():
-                raise EduTimeoutError(
+                raise GlassesTimeoutError(
                     "no answer for frame type 0x%02X seq %d within %.1fs "
                     "(is this really the EDU-CTRL port?)"
                     % (send_type, seq, timeout))

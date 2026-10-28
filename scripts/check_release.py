@@ -10,7 +10,7 @@ root = Path(__file__).resolve().parents[1]
 project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
 requested = os.environ['RELEASE_VERSION']
 assert requested == project['version'], 'Requested version differs from pyproject.toml'
-tree = ast.parse((root / 'edu_host/__init__.py').read_text())
+tree = ast.parse((root / 'looktech_glasses_sdk/__init__.py').read_text())
 versions = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
             and any(isinstance(target, ast.Name) and target.id == '__version__' for target in node.targets)]
 assert versions == [requested], 'SDK __version__ differs from project version'

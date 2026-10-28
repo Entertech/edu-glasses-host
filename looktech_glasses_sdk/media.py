@@ -18,16 +18,16 @@ import time
 from typing import Callable, Optional, Tuple, TYPE_CHECKING, Union
 from urllib.parse import quote, unquote, urlsplit
 
-from .client import EduClientError
+from .client import GlassesClientError
 from .wifi import WifiClient, WifiSecurity
 
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from .session import EduSession
+    from .session import GlassesSession
 
 
-class MediaError(EduClientError):
+class MediaError(GlassesClientError):
     """One media operation failed; already downloaded files are retained."""
 
 
@@ -155,7 +155,7 @@ def _media_operation(method):
 class MediaImport:
     """One sequential LAN context. Progress callbacks run on the SDK caller's thread."""
 
-    def __init__(self, session: EduSession, ssid: str, password: str = '',
+    def __init__(self, session: GlassesSession, ssid: str, password: str = '',
                  security: WifiSecurity = WifiSecurity.WPA2) -> None:
         self.session = session
         self._ssid, self._password, self._security = ssid, password, security
@@ -166,7 +166,7 @@ class MediaImport:
         self._request_lock = threading.Lock()
         self._socket_lock = threading.Lock()
         self._socket = None
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='edu-media')
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='looktech-media')
         self._heartbeat = None
         self._heartbeat_error = None
         self._last_activity = time.monotonic()
@@ -200,7 +200,7 @@ class MediaImport:
                 raise MediaSessionError("invalid LAN endpoint")
             self._endpoint = (str(address), status.port, status.catalog_id)
             self.list()
-            self._heartbeat = threading.Thread(target=self._keepalive, name='edu-media-keepalive', daemon=True)
+            self._heartbeat = threading.Thread(target=self._keepalive, name='looktech-media-keepalive', daemon=True)
             self._heartbeat.start()
             return self
         except BaseException:
@@ -476,9 +476,9 @@ class MediaImport:
         except MediaError as exc:
             if isinstance(exc, MediaSessionError):
                 raise
-            from .client import EduStatusError
+            from .client import GlassesStatusError
             media_id = media.media_id if isinstance(media, MediaItem) else media
-            if (media_id not in self._known_items or not isinstance(exc.__cause__, EduStatusError)
+            if (media_id not in self._known_items or not isinstance(exc.__cause__, GlassesStatusError)
                     or exc.__cause__.data not in (b'\x62', b'\x63', b'\x64')):
                 raise
         else:

@@ -2,7 +2,7 @@
 
 import unittest
 
-from edu_host.bt_discovery import (DEFAULT_NAME_PREFIX, _format_address,
+from looktech_glasses_sdk.bt_discovery import (DEFAULT_NAME_PREFIX, _format_address,
                                    decode_registry_name,
                                    parse_bluetoothctl_devices, pick_by_prefix)
 
@@ -68,11 +68,11 @@ class TestAmbiguityAndConnected(unittest.TestCase):
     """已连接优先 + 多台匹配报歧义（bt_discovery 的连接状态过滤）。"""
 
     def setUp(self):
-        import edu_host.bt_discovery as bd
+        import looktech_glasses_sdk.bt_discovery as bd
         self.bd = bd
 
     def test_ambiguous_error_lists_all(self):
-        from edu_host.bt_discovery import AmbiguousGlassesError
+        from looktech_glasses_sdk.bt_discovery import AmbiguousGlassesError
         matches = [("8C:AA:B5:11:11:11", "EDU-Glasses-0001"),
                    ("8C:AA:B5:66:66:66", "EDU-Glasses-0066")]
         err = AmbiguousGlassesError(matches)
@@ -101,7 +101,7 @@ class TestAmbiguityAndConnected(unittest.TestCase):
             bd._paired_devices_linux = orig_paired
 
     def test_multiple_paired_none_connected_raises(self):
-        from edu_host.bt_discovery import AmbiguousGlassesError
+        from looktech_glasses_sdk.bt_discovery import AmbiguousGlassesError
         bd = self.bd
         orig_plat = bd.sys.platform
         orig_conn = bd._connected_devices_linux

@@ -1,9 +1,11 @@
-# SDK 二进制发布（0.5.0）
+# SDK 二进制发布（0.6.0）
 
-SDK 源码在 `Entertech/edu-glasses-host` 独立维护；demo、使用说明和 API 参考在
-[公开 demo 仓库](https://github.com/Entertech/edu-glasses-demo)维护。
-发布 Cython wheel，保留 `edu_host` 公共接口、低层 API、extras 与类型提示。禁用 sdist，
+SDK 源码在 `Entertech/looktech-glasses-sdk` 独立维护；demo、使用说明和 API 参考在
+[公开 demo 仓库](https://github.com/Entertech/looktech-glasses-demo)维护。
+发布 Cython wheel，提供 `looktech_glasses_sdk` 公共接口、低层 API、extras 与类型提示。禁用 sdist，
 构建门禁拒绝 `.py/.pyx/.c` 等实现源文件。二进制仍可被逆向分析，Cython 不提供加密或绝对源码保护。
+
+> 当前 0.6.0 为更名候选，尚未上传新 PyPI 项目；不可把历史 0.5.0 的成功记录当作本次发布结果。
 
 ## 一次性配置：你需要完成的步骤
 
@@ -13,9 +15,9 @@ SDK 源码在 `Entertech/edu-glasses-host` 独立维护；demo、使用说明和
 
    | 字段 | 填写值 |
    |---|---|
-   | PyPI Project Name | `edu-glasses-host` |
+   | PyPI Project Name | `looktech-glasses-sdk` |
    | Owner | `Entertech` |
-   | Repository name | `edu-glasses-host` |
+   | Repository name | `looktech-glasses-sdk` |
    | Workflow name | `publish-pypi.yml` |
    | Environment name | `pypi` |
 
@@ -39,24 +41,24 @@ SDK 源码在 `Entertech/edu-glasses-host` 独立维护；demo、使用说明和
 tag 发布到 PyPI → 干净环境安装确认 → 合入 demo 的 PyPI 依赖切换。
 PyPI 发布前将 demo 切换保留在候选分支，避免默认分支安装依赖尚不存在的版本。
 
-1. 同步 `pyproject.toml` 与 `edu_host.__version__`；更新公共指南、API 和 demo 固定依赖版本。
-2. Actions → **Build and publish SDK wheels** → Run workflow，选择候选分支，version 填 `0.5.0`，
+1. 同步 `pyproject.toml` 与 `looktech_glasses_sdk.__version__`；更新公共指南、API 和 demo 固定依赖版本。
+2. Actions → **Build and publish SDK wheels** → Run workflow，选择候选分支，version 填 `0.6.0`，
    `publish` 保持关闭。也可运行：
 
    ```bash
-   gh workflow run publish-pypi.yml --repo Entertech/edu-glasses-host --ref main -f version=0.5.0 -f publish=false
+   gh workflow run publish-pypi.yml --repo Entertech/looktech-glasses-sdk --ref main -f version=0.6.0 -f publish=false
    ```
 
-3. 全部构建通过后，下载 artifact 核对 wheel。将已审核提交合入 main，基于该提交创建 `v0.5.0` tag 并推送。
-4. 再运行同一 workflow，选择 **v0.5.0**，填 `0.5.0`，勾选 publish：
+3. 全部构建通过后，下载 artifact 核对 wheel。将已审核提交合入 main，基于该提交创建 `v0.6.0` tag 并推送。
+4. 再运行同一 workflow，选择 **v0.6.0**，填 `0.6.0`，勾选 publish：
 
    ```bash
-   gh workflow run publish-pypi.yml --repo Entertech/edu-glasses-host --ref v0.5.0 -f version=0.5.0 -f publish=true
+   gh workflow run publish-pypi.yml --repo Entertech/looktech-glasses-sdk --ref v0.6.0 -f version=0.6.0 -f publish=true
    ```
 
    正式发布要求版本/tag 完全匹配、全部构建成功；再由 `pypi` 环境发布。
    仅 publish job 拥有 `id-token: write`。上传只读取经审计的 wheel，不上传 sdist 或构建源码。
-5. 从干净环境通过 PyPI 安装，并检查 `from edu_host import EduSession`、demo 启动与版本。
+5. 从干净环境通过 PyPI 安装，并检查 `from looktech_glasses_sdk import GlassesSession`、demo 启动与版本。
    PyPI 相同版本文件不可覆盖；失败先核实已上传文件，修复后通常提升版本，不能依赖跳过重复文件掩盖部分发布。
 
 首次发布前，公开文档必须保留“发布后可安装”的说明；确认 PyPI 可用后移除该提示。
@@ -82,12 +84,30 @@ macOS 额外检查 PyObjC 委托注册与独立解释器导入。检查不连接
 ```bash
 python -m pip install build
 python -m build --wheel
-python scripts/verify_wheels.py dist --version 0.5.0
+python scripts/verify_wheels.py dist --version 0.6.0
 ```
 
 本地审计另需 `packaging`；macOS 构建前设置 `MACOSX_DEPLOYMENT_TARGET=11.0`。
 默认 `python -m build` 会尝试 sdist，因源码分发已禁用，应显式使用 `--wheel`。
-现有 API/线协议保持兼容，只把一处等价字节解包改为 `struct.unpack_from` 以避开 Cython 编译器崩溃。
+本次统一修改软件命名，不保留旧模块、类型或命令别名；设备线协议与二进制发行约束保持不变。
+
+## 本轮更名验证（2026-10-28）
+
+- SDK 源码和独立安装的 0.6.0 二进制包均通过现有 55 项检查；未新增单元测试。
+- 本机 CPython 3.13 / macOS ARM64 wheel 完成构建，`verify_wheels.py`、`twine check`、
+  `verify_installed.py`、PyObjC 委托和隔离解释器 worker 导入检查通过。
+  本机 Python 的构建标签为 `macosx_26_0_arm64`，不代表已在 macOS 11 实机验证；其他平台以远端矩阵为准。
+- Demo 0.4.0 通过正常依赖安装本地新 wheel，现有 3 项 CLI 检查、新命令及四个示例的 help、
+  Notebook 辅助模块导入和 `pip check` 通过。
+- 18 个 SDK 模块完成重命名前后的 AST 对账，除约定命名、版本及文档外未改业务逻辑；
+  所有模块通过 Python 3.9 语法检查。公开文档 24 段 Python 示例、24 个 Notebook 代码单元、
+  74 个本地链接及 26 个锚点检查通过。
+- SDK 与 Demo 的 GitHub 名称、About 和本地 origin 已同步；两仓库 CodeGraph 索引已刷新。
+  新 PyPI 项目尚未发布，未触发远端 CI、创建发行 tag 或重跑设备收发。
+
+## 历史：0.5.0 原始发行记录
+
+以下为旧命名的已发布记录，不代表新项目 0.6.0 已发布。
 
 ## 本轮本地验收（2026-10-26）
 

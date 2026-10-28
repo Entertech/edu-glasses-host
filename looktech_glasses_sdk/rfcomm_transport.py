@@ -1,7 +1,7 @@
 """macOS-native RFCOMM transport (pyobjc / IOBluetooth).
 
 On macOS a Classic-BT SPP service is NOT auto-exposed as a ``/dev/cu.*``
-serial port, so :class:`edu_host.transport.SerialTransport` cannot reach the
+serial port, so :class:`looktech_glasses_sdk.transport.SerialTransport` cannot reach the
 glasses. This transport instead opens the RFCOMM channel of an SPP service
 directly through IOBluetooth, presenting the same synchronous
 open/read/write/close interface as :class:`Transport`.
@@ -10,7 +10,7 @@ IMPORTANT: macOS aborts (SIGABRT, TCC) any process that touches Bluetooth
 unless the *responsible* application's Info.plist declares
 ``NSBluetoothAlwaysUsageDescription``. A bare ``python3`` has no such key, so
 this module only works when launched from an .app bundle that provides it
-(see edu_host/macos/). It requires ``pyobjc-framework-IOBluetooth``.
+(see looktech_glasses_sdk/macos/). It requires ``pyobjc-framework-IOBluetooth``.
 
 The channel's delegate callbacks are driven by a private run-loop thread; RX
 bytes land in a thread-safe buffer that :meth:`read` drains, and :meth:`write`

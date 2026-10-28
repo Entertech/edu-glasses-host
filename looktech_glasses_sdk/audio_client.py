@@ -40,7 +40,7 @@ from typing import List, Optional
 
 from .transport import Transport
 
-log = logging.getLogger("edu_host.audio")
+log = logging.getLogger("looktech_glasses_sdk.audio")
 
 # 每个流内"帧"是带 8 字节头的封装（dcore 编码器输出格式）：
 #   [payload_len u32 大端][encoder final_range u32 大端][OPUS 包(payload_len 字节)]
@@ -341,7 +341,7 @@ class AudioStreamClient:
         if self._manual:
             return self._sink.path
         self._reader = threading.Thread(target=self._reader_loop,
-                                        name="edu-audio-reader", daemon=True)
+                                        name="looktech-audio-reader", daemon=True)
         self._reader.start()
         return self._sink.path
 

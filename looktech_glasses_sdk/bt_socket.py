@@ -6,7 +6,7 @@ Uses only the Python standard library:
   CPython Windows builds, Python 3.9+);
 * Linux:   ``socket.AF_BLUETOOTH`` + ``BTPROTO_RFCOMM``.
 
-macOS's CPython has neither — use :mod:`edu_host.mac_bt` there instead.
+macOS's CPython has neither — use :mod:`looktech_glasses_sdk.mac_bt` there instead.
 
 The device registers its SPP services in a fixed order, so the RFCOMM
 channel numbers are stable across boots (verified against the firmware's

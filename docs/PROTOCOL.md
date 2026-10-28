@@ -1,4 +1,4 @@
-# EDU SPP 协议规格（教育版固件）
+# Looktech Glasses SPP 协议规格（开发者固件）
 
 面向学生 host 开发的完整线协议说明。
 除非特别说明，所有多字节字段均为**小端（LE）**。
@@ -93,7 +93,7 @@ PLAY_TONE 的 `tone_event` 为设备内置提示音编号，常用值：0 开机
 保留 v1、11B HELLO_ACK、990B 帧和旧命令。HELLO caps 新增 bit5 WIFI、bit6
 SAVED_PHOTO、bit7 VIDEO、bit8 MEDIA_CATALOG，bit9 VIDEO_CONFIG。bit8 标识本节的公版 ISP 桥接合同，
 新 SDK 在使用下列拍摄/媒体命令前要求它；不与此前未发布的精确发布原型混用。
-原 TAKE_PHOTO 为教学小图，AUDIO_START/STOP 为音频推流。ISP 固件、索引及路由不变。
+原 TAKE_PHOTO 为SPP JPEG 小图，AUDIO_START/STOP 为音频推流。ISP 固件、索引及路由不变。
 
 | cmd_id | 命令 | args | RSP data（外层 status=OK） |
 |---|---|---|---|
@@ -277,7 +277,7 @@ N/2 秒且内容不可辨。
 
 ## 7. 配对与连接
 
-- 教育版设备永远处于"未绑定"状态，**每次开机约 5 秒后自动进入配对模式**（可发现，
+-开发者固件设备永远处于"未绑定"状态，**每次开机约 5 秒后自动进入配对模式**（可发现，
   2 分钟窗口）；配对窗口结束不会自动关机。
 - 手动进入配对：**拍照键三击，随后按住 5 秒** → 提示音，经典蓝牙配对模式（2 分钟窗口，
   新连接或超时后退出）。
@@ -285,11 +285,11 @@ N/2 秒且内容不可辨。
 
 ## 8. Host 参考实现
 
-本仓库即参考实现：`edu_host/` Python 包（蓝牙 socket / IOBluetooth / 串口三种
+本仓库即参考实现：`looktech_glasses_sdk/` Python 包（蓝牙 socket / IOBluetooth / 串口三种
 transport、协议编解码、音频解码存 wav、图片重组存 jpg、OTA SPP 升级）+
 `demo_cli.py` 交互式 demo + `tests/` 单元测试。环境配置见仓库根 README。
-SDK 入口为 `edu_host.EduSession`；CLI 和 Notebook 复用它，不另行编码线协议。
-实现沿用 `EduClient`、音频解析/sink、图片重组/写盘和 OTA 客户端；macOS 由
+SDK 入口为 `looktech_glasses_sdk.GlassesSession`；CLI 和 Notebook 复用它，不另行编码线协议。
+实现沿用 `GlassesClient`、音频解析/sink、图片重组/写盘和 OTA 客户端；macOS 由
 主线程轮询同一套解析器，底层每条原生通道在独立子进程的主线程接收，再经私有管道
 交给解析器，规避 macOS 27 同进程多通道关闭路由串线；close 等待回收子进程，
 重建 ACL 仅允许发生在同设备没有其他已打开通道时。其余 transport 使用接收线程。
@@ -311,18 +311,18 @@ HELLO 新增 bit10 `NATIVE_INPUT`、bit11 `DEVICE_CAPTURE_STATE`。v1 帧、11B 
 | `0x05` | EVT | CAPTURE_STATE | 同一份 8B 快照 |
 | `0x06` | EVT | AUDIO_RECORD_REQUEST | action u8：0 停止/完成 PC 文件，1 请求 PC 准备接收再调用 AUDIO_START |
 
-快照仅观察存储照片和视频；教学小图继续使用 IMG_STATE，不写入该快照。
+快照仅观察存储照片和视频；SPP JPEG 小图继续使用 IMG_STATE，不写入该快照。
 快照按照片、视频顺序排列，每项为 `kind u8, source u8, state u8, error u8`。
-kind=1 PHOTO / 2 VIDEO；source=0 NONE / 1 LOCAL / 2 APP / 3 AI / 4 EDU；
+kind=1 PHOTO / 2 VIDEO；source=0 NONE / 1 LOCAL / 2 APP / 3 AI / 4 SDK（固件原始来源名 EDU）；
 state=0 IDLE / 1 STARTING / 2 RECORDING / 3 STOPPING / 4 DONE / 6 FAILED / 7 UNKNOWN。
 无操作时 source/state/error 均为0；每类保留最新操作终态，重启归零。它只表示 BT 控制状态，
 不含 operation、媒体 ID 或文件已发布的承诺，也不授予停止权。事件可能在断连时丢失，重连主动查询。
 
 `NATIVE_INPUT` 表示构建开启原生拍照/录像/录音键。按键照片和录像 owner 为 LOCAL，
-不依赖 CTRL；物理键可停止 SDK 录像。PC 发起操作继续属于当前 EDU 会话，断连清理，
+不依赖 CTRL；物理键可停止 SDK 录像。PC 发起操作继续属于当前 SDK 会话，断连清理，
 SDK 不能用设备快照接管本地或其他会话的 operation。媒体、通话与旋钮音量使用既有公版分发。
 三击后长按配对优先；照片/视频灯效、提示音、配置及电量/充电/繁忙保护使用共享业务流程。
-录音维持原 EDU 接收流的重试、允许充电采集及静音提示策略。
+录音维持原 SDK 接收流的重试、允许充电采集及静音提示策略。
 
 录音双击动作仍受公版双击配置约束；开始事件只是意图，固件此时不开麦。
 接收程序准备好文件后调用既有 AUDIO_START，实际流属于该 PC 会话；无 PC 不提供离线录音。

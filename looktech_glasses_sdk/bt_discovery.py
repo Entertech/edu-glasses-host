@@ -1,6 +1,6 @@
 """按名字前缀查找已配对的眼镜（Windows / Linux，零第三方依赖）。
 
-macOS 走 :mod:`edu_host.mac_bt`（IOBluetooth 自带 pairedDevices）；本模块
+macOS 走 :mod:`looktech_glasses_sdk.mac_bt`（IOBluetooth 自带 pairedDevices）；本模块
 补齐另外两个平台，让 ``--bt auto`` 三平台可用：
 
 * **Windows**：已配对经典蓝牙设备记录在注册表
@@ -144,7 +144,7 @@ def find_paired_device(name_prefix: str = DEFAULT_NAME_PREFIX
                        ) -> Optional[PairedDevice]:
     """返回要连接的眼镜 (地址, 名字)，**优先当前已连接**的匹配设备。
 
-    仅 Windows / Linux；macOS 请用 :mod:`edu_host.mac_bt`。
+    仅 Windows / Linux；macOS 请用 :mod:`looktech_glasses_sdk.mac_bt`。
 
     - Linux：先查已连接设备（bluetoothctl），命中即返回——已配对但离线的
       设备不会被选中。

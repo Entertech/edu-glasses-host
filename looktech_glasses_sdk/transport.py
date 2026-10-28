@@ -15,7 +15,7 @@ from typing import List
 
 
 class Transport(abc.ABC):
-    """Minimal byte-pipe interface used by EduClient / AudioStreamClient."""
+    """Minimal byte-pipe interface used by GlassesClient / AudioStreamClient."""
 
     @abc.abstractmethod
     def open(self) -> None:

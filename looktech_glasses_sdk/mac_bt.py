@@ -36,7 +36,7 @@ from Foundation import (NSObject, NSRunLoop, NSDefaultRunLoopMode,  # type: igno
                         NSDate)
 import IOBluetooth  # type: ignore
 
-#: SPP service UUIDs (16-bit) of the education firmware.
+#: SPP service UUIDs (16-bit) of the developer firmware.
 UUID_CTRL = 0x2028
 UUID_AUDIO = 0x2024
 UUID_IMG = 0x2025
@@ -60,7 +60,7 @@ def find_device(bt_addr: Optional[str] = None,
     because that is the one the demo can actually talk to — a paired-but-
     offline device would just time out. If none is connected: a single
     match is returned; multiple matches raise
-    :class:`~edu_host.bt_discovery.AmbiguousGlassesError` so the caller asks
+    :class:`~looktech_glasses_sdk.bt_discovery.AmbiguousGlassesError` so the caller asks
     for an explicit --bt <address> instead of guessing.
     """
     if bt_addr and bt_addr != "auto":
@@ -230,7 +230,7 @@ class MacRFCOMMChannel:
         address = str(self._dev.getAddressString())
         # -c also works for notebooks and scripts without a __main__ guard.
         code = ("import sys; sys.path[:0] = %r; "
-                "from edu_host.mac_bt import _channel_worker; "
+                "from looktech_glasses_sdk.mac_bt import _channel_worker; "
                 "_channel_worker(int(sys.argv[1]), sys.argv[2], "
                 "int(sys.argv[3]), float(sys.argv[4]))") % sys.path
         for attempt in range(retries + 1):

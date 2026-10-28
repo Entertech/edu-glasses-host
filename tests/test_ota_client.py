@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from edu_host.ota_client import (ASYNC_OK, OP_CAN_UPDATE, OP_ENTER_UPDATE,
+from looktech_glasses_sdk.ota_client import (ASYNC_OK, OP_CAN_UPDATE, OP_ENTER_UPDATE,
                                  OP_GET_INFO, OP_SEND_DATA, OP_UPDATE_RESULT,
                                  OP_VERIFY_DATA, OTAClient, OTAFirmwareImage,
                                  OTAPacketParser, PACKET_APPENDIX,

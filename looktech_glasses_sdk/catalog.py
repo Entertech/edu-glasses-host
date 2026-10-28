@@ -1,4 +1,4 @@
-"""Typed bridge to the public ISP ID and BASE metadata queries over EDU SPP."""
+"""Typed bridge to the public ISP ID and BASE metadata queries over Looktech Glasses SPP."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,11 +6,11 @@ import struct
 from typing import TYPE_CHECKING, Tuple
 
 from . import protocol
-from .client import EduClientError, EduStatusError, EduTimeoutError
+from .client import GlassesClientError, GlassesStatusError, GlassesTimeoutError
 from .media import MediaError, MediaItem, MediaSessionError, _integer, _media_file
 
 if TYPE_CHECKING:
-    from .session import EduSession
+    from .session import GlassesSession
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class MediaCapabilities:
 
 
 class CatalogClient:
-    def __init__(self, session: EduSession) -> None:
+    def __init__(self, session: GlassesSession) -> None:
         self.session = session
 
     def _request(self, command, args=b''):
@@ -29,14 +29,14 @@ class CatalogClient:
         try:
             self.session._require(protocol.CAP_MEDIA_CATALOG)
             return self.session._request(command, args, timeout=35.0).data
-        except EduStatusError as exc:
+        except GlassesStatusError as exc:
             # These public backend errors invalidate a selected catalog or owner.
             if exc.data and exc.data[0] in (0x60, 0x68, 0x6e, 0x73, 0x74):
                 raise MediaSessionError('media catalog unavailable (code %d)' % exc.data[0]) from exc
             raise MediaError('media query failed (code %s)' % (exc.data.hex() or 'unknown')) from exc
-        except (EduTimeoutError, OSError) as exc:
+        except (GlassesTimeoutError, OSError) as exc:
             raise MediaSessionError('media control query timed out or lost transport') from exc
-        except EduClientError as exc:
+        except GlassesClientError as exc:
             if not self.session.is_connected or self.session._client is not owner:
                 raise MediaSessionError('media CTRL owner disconnected or changed') from exc
             raise
@@ -47,8 +47,8 @@ class CatalogClient:
             raise MediaSessionError('invalid media capabilities response')
         version, catalog, features = struct.unpack('<BQI', data)
         if version != 1 or not catalog or features & 0x11 != 0x11:
-            from .session import EduUnsupportedError
-            raise EduUnsupportedError('ISP needs the public ID catalog and BASE metadata queries')
+            from .session import GlassesUnsupportedError
+            raise GlassesUnsupportedError('ISP needs the public ID catalog and BASE metadata queries')
         return MediaCapabilities(version, catalog, features)
 
     def check(self, catalog_id: int) -> None:
@@ -90,7 +90,7 @@ class CatalogClient:
                 try:
                     items.append(self.item(catalog_id, identity))
                 except MediaError as exc:
-                    if isinstance(exc, MediaSessionError) or not isinstance(exc.__cause__, EduStatusError) or exc.__cause__.data not in (b'\x62', b'\x63'):
+                    if isinstance(exc, MediaSessionError) or not isinstance(exc.__cause__, GlassesStatusError) or exc.__cause__.data not in (b'\x62', b'\x63'):
                         raise
                     # A concurrent public deletion may remove an ID between these two queries.
             if not more:

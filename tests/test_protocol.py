@@ -1,6 +1,6 @@
-"""Pure-Python unit tests for the edu_host protocol stack.
+"""Pure-Python unit tests for the looktech_glasses_sdk protocol stack.
 
-Run from the edu_host/ directory with either:
+Run from the looktech_glasses_sdk/ directory with either:
 
     python -m unittest discover -s tests -v
     python -m pytest tests -v
@@ -11,15 +11,15 @@ No hardware, pyserial or opuslib required.
 import struct
 import unittest
 
-from edu_host.crc16 import crc16
-from edu_host import protocol
-from edu_host.protocol import (AIR_IMG_BODY, AIR_IMG_DATA_TYPE_IMAGE,
+from looktech_glasses_sdk.crc16 import crc16
+from looktech_glasses_sdk import protocol
+from looktech_glasses_sdk.protocol import (AIR_IMG_BODY, AIR_IMG_DATA_TYPE_IMAGE,
                                AIR_IMG_HEAD, AIR_IMG_TAIL, FORMAT_JPEG,
                                AirImgStreamParser, FrameParser, FrameType,
                                HelloAck, ImageReassembler, SensorData,
                                DeviceInfo, encode_frame, parse_event,
                                version_to_string)
-from edu_host.audio_client import (PKG_HDR, PKG_LEN_EXTRA, PKG_TAG,
+from looktech_glasses_sdk.audio_client import (PKG_HDR, PKG_LEN_EXTRA, PKG_TAG,
                                    RecordStreamParser)
 
 

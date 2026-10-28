@@ -16,8 +16,8 @@ class BinaryBuild(build_py):
         super().run()
         from mypy.stubgen import main
 
-        main(['--no-import', 'edu_host', '-o', self.build_lib])
-        package = Path(self.build_lib) / 'edu_host'
+        main(['--no-import', 'looktech_glasses_sdk', '-o', self.build_lib])
+        package = Path(self.build_lib) / 'looktech_glasses_sdk'
         if not (package / '__init__.pyi').is_file():
             raise RuntimeError('SDK type declarations were not generated')
         with (package / '__init__.pyi').open('a') as declarations:
@@ -31,8 +31,8 @@ class NoSourceDistribution(sdist):
 
 
 extensions = [
-    Extension('edu_host.' + path.stem, [str(path)])
-    for path in sorted(Path('edu_host').glob('*.py'))
+    Extension('looktech_glasses_sdk.' + path.stem, [str(path)])
+    for path in sorted(Path('looktech_glasses_sdk').glob('*.py'))
 ]
 
 setup(
